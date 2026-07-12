@@ -20,6 +20,24 @@ impl PasswordHasher {
             Err(_) => return false,
         };
 
-        Argon2::default().verify_password(password.as_bytes(), &parsed_hash).is_ok()
+        Argon2::default()
+          .verify_password(password.as_bytes(), &parsed_hash)
+          .is_ok()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PasswordHasher;
+
+    #[test]
+    fn make_returns_hash_that_can_be_verified() {
+        let password = "secert";
+
+        let hash = PasswordHasher::make(password).unwrap();
+
+        println!("password hash {}", hash);
+
+        assert!(PasswordHasher::verify(password, &hash));
     }
 }
