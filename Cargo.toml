@@ -12,7 +12,6 @@ tokio = { version = "1.52.3", features = ["full"] }
 redis-client = { path = "crates/redis-client" }
 api-response = { path = "crates/api-response" }
 auth = { path = "crates/auth" }
-serde = { version = "1", features = ["derive"] }
 
 [workspace]
 members = [

@@ -1,7 +1,3 @@
-use serde::Deserialize;
+mod login;
 
-#[derive(Deserialize)]
-pub struct LoginRequest {
-  pub login: String,
-  pub password: String,
-}
+pub use login::LoginRequest;
