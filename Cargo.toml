@@ -1,0 +1,23 @@
+[package]
+name = "rust-web-app"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+axum = "0.8.9"
+tokio = { version = "1.52.3", features = ["full"] }
+redis-client = { path = "crates/redis-client" }
+api-response = { path = "crates/api-response" }
+auth = { path = "crates/auth" }
+
+[workspace]
+members = [
+    ".",
+    "crates/api-response",
+    "crates/auth",
+    "crates/redis-client",
+]
+resolver = "3"
