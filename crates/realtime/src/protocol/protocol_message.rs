@@ -1,9 +1,23 @@
 use serde::{Deserialize, Serialize};
-use crate::PresenceMessage;
+use crate::{Message, PresenceMessage, ProtocolAction};
 
 #[derive(Serialize, Deserialize)]
 pub struct ProtocolMessage {
 
+  pub action: ProtocolAction,
+
   #[serde(skip_serializing_if="Option::is_none")]
-  pub presence: Option<Vec<PresenceMessage>>
+  pub channel: Option<String>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub messages: Option<Vec<Message>>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub presence: Option<Vec<PresenceMessage>>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub msg_serial: Option<u64>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub connection_id: Option<String>,
 }
