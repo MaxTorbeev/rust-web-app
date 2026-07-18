@@ -21,3 +21,16 @@ pub struct ProtocolMessage {
   #[serde(skip_serializing_if="Option::is_none")]
   pub connection_id: Option<String>,
 }
+
+impl ProtocolMessage {
+  pub fn connected() -> Self {
+    Self {
+      action: ProtocolAction::Connect,
+      channel: None,
+      messages: None,
+      presence: None,
+      msg_serial: None,
+      connection_id: None,
+    }
+  }
+}
