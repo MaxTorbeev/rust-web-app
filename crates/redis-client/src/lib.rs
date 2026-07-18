@@ -4,4 +4,6 @@ pub mod config;
 pub use config::RedisConfig;
 pub use redis::aio::MultiplexedConnection;
 
-pub use client::{connect, ping};
+pub use client::{RedisClient};
+
+pub use redis::{RedisError, RedisResult};
