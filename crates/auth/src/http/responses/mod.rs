@@ -1,3 +1,3 @@
-mod access_token_response;
+mod login_response;
 
-pub use access_token_response::*;
+pub use login_response::*;

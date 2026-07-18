@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{SessionError, Token};
+use crate::{SessionError, Token, UserIdentity};
 use redis_client::RedisClient;
 use crate::session::session::Session;
 
@@ -12,10 +12,9 @@ impl SessionStore {
     Self { redis }
   }
 
-  pub async fn create(&self, session: &Session) -> Result<String, SessionError> {
+  pub async fn create(&self, session: Session) -> Result<String, SessionError> {
     let token = Token::generate()?;
     let key = Self::session_key(&token);
-
     let value = serde_json::to_string(&session)?;
 
     self.redis.set(&key, &value).await?;
@@ -23,12 +22,14 @@ impl SessionStore {
     Ok(token)
   }
 
-  pub async fn find(&self, token: &str) -> Result<String, SessionError> {
+  pub async fn find(&self, token: &str) -> Result<Session, SessionError> {
     let key = Self::session_key(&token);
 
-    let token = self.redis.get(&key).await?;
+    let value = self.redis.get(&key).await?;
 
-    Ok(token)
+    let session = serde_json::from_str::<Session>(&value)?;
+
+    Ok(session)
   }
 
   fn session_key(token: &str) -> String {
