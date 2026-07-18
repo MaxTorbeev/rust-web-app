@@ -15,6 +15,7 @@ dependencies = [
 name = "api-response"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "serde",
 ]
 
@@ -48,6 +49,7 @@ dependencies = [
  "hex",
  "redis-client",
  "serde",
+ "serde_json",
  "sha2",
  "tracing",
 ]

@@ -33,4 +33,13 @@ impl RedisClient {
       .query_async::<String>(&mut conn)
       .await
   }
+
+  pub async fn get(&self, key: &str) -> RedisResult<String> {
+    let mut conn = self.connection.clone();
+
+    redis::cmd("GET")
+      .arg(key)
+      .query_async::<String>(&mut conn)
+      .await
+  }
 }

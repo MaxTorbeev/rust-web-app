@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use crate::{SessionError, Token};
 use redis_client::RedisClient;
+use crate::session::session::Session;
 
 pub struct SessionStore {
   redis: Arc<RedisClient>,
@@ -11,19 +12,28 @@ impl SessionStore {
     Self { redis }
   }
 
-  pub async fn create(&self, login: &str) -> Result<String, SessionError> {
-
+  pub async fn create(&self, session: &Session) -> Result<String, SessionError> {
     let token = Token::generate()?;
-    let fingerprint = Token::fingerprint(&token);
+    let key = Self::session_key(&token);
 
-    let key = format!("auth:session:{fingerprint}");
+    let value = serde_json::to_string(&session)?;
 
-    self.redis.set(&key, login).await?;
+    self.redis.set(&key, &value).await?;
 
     Ok(token)
   }
-  //
-  // pub async fn find(&self, token: &str) -> Result<Option<Session>, SessionError> {
-  //
-  // }
+
+  pub async fn find(&self, token: &str) -> Result<String, SessionError> {
+    let key = Self::session_key(&token);
+
+    let token = self.redis.get(&key).await?;
+
+    Ok(token)
+  }
+
+  fn session_key(token: &str) -> String {
+    let fingerprint = Token::fingerprint(&token);
+
+    format!("auth:session:{fingerprint}")
+  }
 }
