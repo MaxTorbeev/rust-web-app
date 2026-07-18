@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{SessionError, Token, UserIdentity};
+use crate::{SessionError, Token};
 use redis_client::RedisClient;
 use crate::session::session::Session;
 

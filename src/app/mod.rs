@@ -17,7 +17,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let routes = http::routes::init(app_state);
 
     // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind(HttpConfig::default().url).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(HttpConfig::default().url).await?;
 
     axum::serve(listener, routes).await?;
 
