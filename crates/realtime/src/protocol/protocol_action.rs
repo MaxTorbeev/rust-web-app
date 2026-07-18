@@ -10,5 +10,7 @@ pub enum ProtocolAction {
   Connected = 4,
   Attach = 10,
   Attached = 11,
+  Presence = 14,
   Message = 15,
+  Sync = 16,
 }
