@@ -20,6 +20,6 @@ members = [
     "crates/auth",
     "crates/realtime",
     "crates/redis-client",
-    "crates/realtime",
+    "crates/realtime", "crates/support",
 ]
 resolver = "3"

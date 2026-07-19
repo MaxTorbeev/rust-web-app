@@ -2,7 +2,7 @@ use crate::{AuthConfig, Session, SessionStore, UserIdentity};
 use crate::http::requests::LoginRequest;
 use axum::{Json, extract::State};
 use std::sync::Arc;
-use api_response::{ApiError, ApiMessage, ApiResponse};
+use api_response::{ApiError, ApiResponse};
 use crate::authenticator::Authenticator;
 use crate::http::responses::LoginResponse;
 

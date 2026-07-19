@@ -1,8 +1,7 @@
-use axum::extract::ws::{Message as WsMessage, Message, WebSocket};
-use tracing::error;
-use crate::{ProtocolAction, ProtocolMessage};
+use axum::extract::ws::{Message as WsMessage, WebSocket};
+use crate::{Connection, ProtocolAction, ProtocolMessage};
 
-pub async fn handle_socket(mut socket: WebSocket) {
+pub async fn handle_socket(mut socket: WebSocket, connection: Connection) {
   tracing::info!("websocket connected");
 
   while let Some(result) = socket.recv().await {
@@ -10,8 +9,8 @@ pub async fn handle_socket(mut socket: WebSocket) {
 
     let ws_message = match result {
       Ok(msg) => msg,
-      Err(e) => {
-        tracing::error!(%e, "websocket read failed");
+      Err(_e) => {
+        tracing::error!(%_e, "websocket read failed");
         break;
       }
     };
@@ -22,12 +21,24 @@ pub async fn handle_socket(mut socket: WebSocket) {
           Ok(m) => m,
           Err(e) => {
             tracing::error!(%e, "invalid websocket message");
-            break;
+
+            let response = ProtocolMessage::nack(None);
+
+            if let Err(_e) = send_protocol_message(&mut socket, response).await {
+              tracing::error!(?e, "websocket send failed");
+              break;
+            }
+
+            continue
           }
         };
 
         let response = match message.action {
-          ProtocolAction::Connect => ProtocolMessage::connected(),
+          ProtocolAction::Connect => ProtocolMessage::connected(&connection),
+          ProtocolAction::Attach => ProtocolMessage::attached(&message),
+          ProtocolAction::Presence => ProtocolMessage::ack(&message),
+          ProtocolAction::Message => ProtocolMessage::ack(&message),
+          ProtocolAction::Heartbeat => ProtocolMessage::heartbeat(),
           _ => continue,
         };
 

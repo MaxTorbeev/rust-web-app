@@ -10,8 +10,9 @@ serde_json = "1"
 axum = { version = "0.8.9", features = ["ws"] }
 auth = { path = "../auth" }
 api-response = { path = "../api-response" }
+support = { path = "../support" }
 tracing = "0.1.44"
-argon2 = { version = "0.5.3", features = ["std"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 redis-client = { path = "../redis-client" }
 getrandom = "0.3"
 base64 = "0.22"

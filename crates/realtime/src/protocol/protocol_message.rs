@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use crate::{Message, PresenceMessage, ProtocolAction};
+use crate::{Connection, Message, PresenceMessage, ProtocolAction};
 
 #[derive(Serialize, Deserialize)]
 pub struct ProtocolMessage {
@@ -23,13 +23,57 @@ pub struct ProtocolMessage {
 }
 
 impl ProtocolMessage {
-  pub fn connected() -> Self {
+  pub fn connected(connection: &Connection) -> Self {
     Self {
       action: ProtocolAction::Connect,
       channel: None,
       messages: None,
       presence: None,
       msg_serial: None,
+      connection_id: Some(connection.id.as_str().to_string()),
+    }
+  }
+
+  pub fn attached(message: &ProtocolMessage) -> Self {
+    Self {
+      action: ProtocolAction::Attached,
+      channel: message.channel.clone(),
+      messages: None,
+      presence: None,
+      msg_serial: message.msg_serial,
+      connection_id: None,
+    }
+  }
+
+  pub fn ack(message: &ProtocolMessage) -> Self {
+    Self {
+      action: ProtocolAction::Ack,
+      channel: message.channel.clone(),
+      messages: None,
+      presence: None,
+      msg_serial: message.msg_serial,
+      connection_id: None,
+    }
+  }
+
+  pub fn heartbeat() -> Self {
+    Self {
+      action: ProtocolAction::Heartbeat,
+      channel: None,
+      messages: None,
+      presence: None,
+      msg_serial: None,
+      connection_id: None,
+    }
+  }
+
+  pub fn nack(msg_serial: Option<u64>) -> Self {
+    Self {
+      action: ProtocolAction::Nack,
+      channel: None,
+      messages: None,
+      presence: None,
+      msg_serial,
       connection_id: None,
     }
   }
