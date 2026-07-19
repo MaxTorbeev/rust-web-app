@@ -31,7 +31,11 @@ pub async fn handle_socket(mut socket: WebSocket) {
           _ => continue,
         };
 
-        send_protocol_message(&mut socket, response).await;
+        if let Err(err) = send_protocol_message(&mut socket, response).await {
+          tracing::error!(?err, "websocket send error");
+
+          break;
+        }
       }
       _ => {}
     }
