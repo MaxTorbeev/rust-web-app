@@ -1,6 +1,6 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(Serialize_repr, Deserialize_repr)]
+#[derive(Serialize_repr, Deserialize_repr, Clone)]
 #[repr(u8)]
 pub enum ProtocolAction {
   Heartbeat = 0,

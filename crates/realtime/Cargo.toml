@@ -13,6 +13,8 @@ api-response = { path = "../api-response" }
 support = { path = "../support" }
 tracing = "0.1.44"
 uuid = { version = "1", features = ["v4", "serde"] }
+tokio = { version = "1.52.3", features = ["sync", "rt", "macros", "time"] }
+futures-util = "0.3"
 redis-client = { path = "../redis-client" }
 getrandom = "0.3"
 base64 = "0.22"

@@ -1,3 +1,5 @@
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+
 pub struct ConnectionId(String);
 
 impl ConnectionId {

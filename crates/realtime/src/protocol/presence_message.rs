@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::PresenceAction;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresenceMessage {
   pub action: PresenceAction,

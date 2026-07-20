@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use crate::{Connection, Message, PresenceMessage, ProtocolAction};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ProtocolMessage {
 
   pub action: ProtocolAction,
@@ -25,7 +25,7 @@ pub struct ProtocolMessage {
 impl ProtocolMessage {
   pub fn connected(connection: &Connection) -> Self {
     Self {
-      action: ProtocolAction::Connect,
+      action: ProtocolAction::Connected,
       channel: None,
       messages: None,
       presence: None,

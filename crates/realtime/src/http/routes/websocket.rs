@@ -6,12 +6,13 @@ use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
-use crate::Connection;
+use crate::{ChannelHub, Connection};
 
 pub async fn websocket(
     ws: WebSocketUpgrade,
     Query(query): Query<WebSocketQuery>,
     State(session): State<Arc<SessionStore>>,
+    State(channel_hub): State<Arc<ChannelHub>>,
 ) -> Result<Response, ApiError> {
     let session = session
         .find(query.token.as_str())
@@ -21,6 +22,8 @@ pub async fn websocket(
     let connection = Connection::new(session.user);
 
     Ok(ws
-        .on_upgrade(|_socket| async move { handle_socket(_socket, connection).await })
+        .on_upgrade(|_socket| async move {
+            handle_socket(_socket, connection, channel_hub).await
+        })
         .into_response())
 }
