@@ -72,10 +72,7 @@ impl EventBus {
         F: Fn(E) -> Fut + Send + Sync + 'static,
         Fut: Future<Output = ()> + Send + 'static
   {
-    let handle = self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| {
-      handler(envelope.event)
-    })
-      .await?;
+    let handle = self.subscribe(handler).await?;
 
     handle.detach();
 
