@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use axum::extract::FromRef;
 use auth::{AuthConfig, SessionStore};
+use event_bus::EventBus;
 use realtime::ChannelHub;
 use redis_client::{RedisClient};
 
@@ -10,10 +11,11 @@ pub struct AppState {
     pub auth: Arc<AuthConfig>,
     pub sessions: Arc<SessionStore>,
     pub channel_hub: Arc<ChannelHub>,
+    pub event_bus: Arc<EventBus>
 }
 
 impl AppState {
-    pub fn new(redis: Arc<RedisClient>, auth: Arc<AuthConfig>) -> Self {
+    pub fn new(redis: Arc<RedisClient>, auth: Arc<AuthConfig>, event_bus: Arc<EventBus>) -> Self {
         let sessions = Arc::new(SessionStore::new(redis.clone()));
         let channel_hub = Arc::new(ChannelHub::new());
 
@@ -22,6 +24,7 @@ impl AppState {
             sessions,
             auth,
             channel_hub,
+            event_bus,
         }
     }
 }
@@ -41,5 +44,11 @@ impl FromRef<AppState> for Arc<SessionStore> {
 impl FromRef<AppState> for Arc<ChannelHub> {
     fn from_ref(state: &AppState) -> Self {
         state.channel_hub.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<EventBus> {
+    fn from_ref(state: &AppState) -> Self {
+        state.event_bus.clone()
     }
 }

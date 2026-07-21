@@ -12,14 +12,8 @@ tokio = { version = "1.52.3", features = ["full"] }
 redis-client = { path = "crates/redis-client" }
 realtime = { path = "crates/realtime" }
 auth = { path = "crates/auth" }
+event-bus = { path = "crates/event-bus" }
 
 [workspace]
-members = [
-    ".",
-    "crates/api-response",
-    "crates/auth",
-    "crates/realtime",
-    "crates/redis-client",
-    "crates/realtime", "crates/support",
-]
+members = [".", "crates/api-response", "crates/auth", "crates/realtime", "crates/redis-client", "crates/realtime", "crates/support", "crates/event-bus"]
 resolver = "3"
