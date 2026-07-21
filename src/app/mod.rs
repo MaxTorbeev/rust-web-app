@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use auth::AuthConfig;
+use event_bus::EventBus;
 use crate::app::config::{HttpConfig};
 use redis_client::{RedisClient, RedisConfig};
 
@@ -12,7 +13,9 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let auth = Arc::new(AuthConfig::from_env()?);
 
-    let app_state = state::AppState::new(redis, auth);
+    let event_bus = Arc::new(EventBus::new().await?);
+
+    let app_state = state::AppState::new(redis, auth, event_bus);
 
     let routes = http::routes::init(app_state);
 

@@ -1,4 +1,5 @@
 use std::fmt::Debug;
+use std::future::Future;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_events::EventBusBuilder;
