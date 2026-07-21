@@ -29,7 +29,7 @@ pub async fn websocket(
 
     Ok(ws
         .on_upgrade(|_socket| async move {
-            handle_socket(_socket, connection, channel_hub).await
+            handle_socket(_socket, connection, channel_hub, event_bus).await
         })
         .into_response())
 }

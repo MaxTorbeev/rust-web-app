@@ -4,9 +4,16 @@ use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage};
+use tracing::event;
+use event_bus::EventBus;
+use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage, WebsocketDisconnected};
 
-pub async fn handle_socket(socket: WebSocket, connection: Connection, channel_hub: Arc<ChannelHub>) {
+pub async fn handle_socket(
+  socket: WebSocket,
+  connection: Connection,
+  channel_hub: Arc<ChannelHub>,
+  event_bus: Arc<EventBus>,
+) {
   let (
     sender,
     mut receiver
@@ -95,7 +102,9 @@ pub async fn handle_socket(socket: WebSocket, connection: Connection, channel_hu
   // Read loop finished
   writer_task.abort();
 
-  tracing::info!("websocket disconnected");
+  event_bus.emit(WebsocketDisconnected {
+    connection_id: connection.id.as_str().to_string()
+  }).await;
 }
 
 async fn writer_loop(receiver: &mut UnboundedReceiver<ProtocolMessage>, socket_sender: &mut SplitSink<WebSocket, Message>) {
