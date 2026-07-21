@@ -8,12 +8,16 @@ mod http;
 mod state;
 mod config;
 
+mod listeners;
+
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let redis = Arc::new(RedisClient::connect(&RedisConfig::default()).await?);
 
     let auth = Arc::new(AuthConfig::from_env()?);
 
     let event_bus = Arc::new(EventBus::new().await?);
+
+    listeners::register(event_bus.clone()).await?;
 
     let app_state = state::AppState::new(redis, auth, event_bus);
 

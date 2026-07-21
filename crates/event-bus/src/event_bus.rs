@@ -60,14 +60,28 @@ impl EventBus {
     Ok(())
   }
 
-  pub async fn subscribe<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
+  pub async fn listen<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
   where E: Event,
-    F: Fn(E) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = ()> + Send + 'static
+        F: Fn(E) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = ()> + Send + 'static
   {
-    self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| {
+    let handle = self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| {
       handler(envelope.event)
     })
+      .await?;
+
+    handle.detach();
+
+    Ok(())
+  }
+
+  pub async fn subscribe<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
+  where
+    E: Event,
+    F: Fn(E) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output=()> + Send + 'static,
+  {
+    self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| { handler(envelope.event) })
       .await?;
 
     Ok(())

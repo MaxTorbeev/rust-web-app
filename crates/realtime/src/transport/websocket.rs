@@ -7,8 +7,6 @@ use tokio::sync::mpsc::UnboundedReceiver;
 use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage};
 
 pub async fn handle_socket(socket: WebSocket, connection: Connection, channel_hub: Arc<ChannelHub>) {
-  tracing::info!("websocket connected");
-
   let (
     sender,
     mut receiver
