@@ -23,11 +23,9 @@ pub async fn websocket(
 
     let connection = Connection::new(session.user);
 
-    if let Err(_e) = event_bus.publish(WebsocketConnected {
+    event_bus.emit(WebsocketConnected {
         connection_id: connection.id.as_str().to_string(),
-    }).await {
-        tracing::error!("Failed to publish websocket connection");
-    }
+    }).await;
 
     Ok(ws
         .on_upgrade(|_socket| async move {

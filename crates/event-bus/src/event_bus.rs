@@ -60,6 +60,12 @@ impl EventBus {
     Ok(())
   }
 
+  pub async fn emit<E>(&self, event: E) where E: Event {
+    if let Err(e) = self.publish(event).await {
+      tracing::error!(event = E::NAME, %e, "Failed to publish event");
+    }
+  }
+
   pub async fn listen<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
   where E: Event,
         F: Fn(E) -> Fut + Send + Sync + 'static,
