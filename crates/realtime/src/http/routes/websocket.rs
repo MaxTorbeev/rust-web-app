@@ -7,7 +7,7 @@ use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, WebsocketConnected};
+use crate::{ChannelHub, Connection};
 
 pub async fn websocket(
     ws: WebSocketUpgrade,
@@ -22,10 +22,6 @@ pub async fn websocket(
         .map_err(|_e| ApiError::unauthorized("Invalid token"))?;
 
     let connection = Connection::new(session.user);
-
-    event_bus.emit(WebsocketConnected {
-        connection_id: connection.id.as_str().to_string(),
-    }).await;
 
     Ok(ws
         .on_upgrade(|_socket| async move {

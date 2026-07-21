@@ -4,6 +4,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use tokio_events::EventBusBuilder;
 use crate::event_bus_error::EventBusError;
+use crate::{ListenerHandle};
 
 pub trait Event: Clone
 + Debug
@@ -81,16 +82,16 @@ impl EventBus {
     Ok(())
   }
 
-  pub async fn subscribe<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
+  pub async fn subscribe<E, F, Fut>(&self, handler: F) -> Result<ListenerHandle, EventBusError>
   where
     E: Event,
     F: Fn(E) -> Fut + Send + Sync + 'static,
     Fut: Future<Output=()> + Send + 'static,
   {
-    self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| { handler(envelope.event) })
+    let inner = self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| { handler(envelope.event) })
       .await?;
 
-    Ok(())
+    Ok(ListenerHandle::new(inner))
   }
 }
 

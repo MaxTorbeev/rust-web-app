@@ -4,9 +4,8 @@ use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing::event;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage, WebsocketDisconnected};
+use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
 
 pub async fn handle_socket(
   socket: WebSocket,
@@ -14,6 +13,11 @@ pub async fn handle_socket(
   channel_hub: Arc<ChannelHub>,
   event_bus: Arc<EventBus>,
 ) {
+
+  event_bus.emit(WebsocketConnected {
+    connection_id: connection.id.as_str().to_string(),
+  }).await;
+
   let (
     sender,
     mut receiver
