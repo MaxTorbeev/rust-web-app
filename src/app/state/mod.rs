@@ -3,7 +3,7 @@ use axum::extract::FromRef;
 use auth::{AuthConfig, SessionStore};
 use event_bus::EventBus;
 use realtime::ChannelHub;
-use realtime::presence_hub::PresenceHub;
+use realtime::PresenceHub;
 use redis_client::{RedisClient};
 
 #[derive(Clone)]
@@ -54,5 +54,11 @@ impl FromRef<AppState> for Arc<ChannelHub> {
 impl FromRef<AppState> for Arc<EventBus> {
     fn from_ref(state: &AppState) -> Self {
         state.event_bus.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<PresenceHub> {
+    fn from_ref(state: &AppState) -> Self {
+        state.presence_hub.clone()
     }
 }

@@ -10,6 +10,6 @@ pub fn init(state: AppState) -> Router {
     Router::new()
         .route("/auth/login", post(login))
         .route("/auth/check", get(check))
-        .route("/ws", get(websocket))
+        .route("/", get(websocket))
         .with_state(state)
 }

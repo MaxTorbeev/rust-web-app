@@ -1,7 +1,15 @@
+use futures_util::stream::Count;
 use serde::{Deserialize, Serialize};
-use crate::{Connection, Message, PresenceMessage, ProtocolAction};
+use crate::{Connection, ConnectionDetails, Message, PresenceMessage, ProtocolAction};
 
 #[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthDetails {
+  pub access_token: String,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProtocolMessage {
 
   pub action: ProtocolAction,
@@ -20,6 +28,15 @@ pub struct ProtocolMessage {
 
   #[serde(skip_serializing_if="Option::is_none")]
   pub connection_id: Option<String>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub connection_details: Option<ConnectionDetails>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub auth: Option<AuthDetails>,
+
+  #[serde(skip_serializing_if="Option::is_none")]
+  pub count: Option<u64>,
 }
 
 impl ProtocolMessage {
@@ -31,6 +48,9 @@ impl ProtocolMessage {
       presence: None,
       msg_serial: None,
       connection_id: Some(connection.id.as_str().to_string()),
+      connection_details: Some(ConnectionDetails::new(connection)),
+      auth: None,
+      count: None,
     }
   }
 
@@ -42,6 +62,9 @@ impl ProtocolMessage {
       presence: None,
       msg_serial: message.msg_serial,
       connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
     }
   }
 
@@ -53,6 +76,9 @@ impl ProtocolMessage {
       presence: None,
       msg_serial: message.msg_serial,
       connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: message.msg_serial.map(|_| 1),
     }
   }
 
@@ -64,6 +90,9 @@ impl ProtocolMessage {
       presence: None,
       msg_serial: None,
       connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
     }
   }
 
@@ -75,6 +104,9 @@ impl ProtocolMessage {
       presence: None,
       msg_serial,
       connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: msg_serial.map(|_| 1),
     }
   }
 
@@ -83,9 +115,12 @@ impl ProtocolMessage {
       action: ProtocolAction::Presence,
       channel: Some(channel.to_string()),
       messages: None,
-      presence: None,
+      presence: Some(presence),
       msg_serial: None,
       connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
     }
   }
 }

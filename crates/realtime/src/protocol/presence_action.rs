@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
+use serde::{Serialize};
+use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Serialize_repr, Deserialize_repr, Clone)]
 #[repr(u8)]
 pub enum PresenceAction {
   Absent = 0,

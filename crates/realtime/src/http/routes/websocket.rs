@@ -1,7 +1,7 @@
 use crate::requests::websocket_query::WebSocketQuery;
 use crate::websocket::handle_socket;
 use api_response::ApiError;
-use auth::SessionStore;
+use auth::{SessionStore, UserIdentity};
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
@@ -18,12 +18,17 @@ pub async fn websocket(
     State(channel_hub): State<Arc<ChannelHub>>,
     State(presence_hub): State<Arc<PresenceHub>>,
 ) -> Result<Response, ApiError> {
-    let session = session
-        .find(query.token.as_str())
-        .await
-        .map_err(|_e| ApiError::unauthorized("Invalid token"))?;
+    
+    // let session = session
+    //     .find(query.access_token.as_str())
+    //     .await
+    //     .map_err(|_e| ApiError::unauthorized("Invalid token"))?;
 
-    let connection = Connection::new(session.user);
+    let user = UserIdentity {
+        login: "maxtor".parse().unwrap()
+    };
+
+    let connection = Connection::new(user);
 
     Ok(ws
         .on_upgrade(|_socket| async move {
