@@ -8,6 +8,7 @@ use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 use event_bus::EventBus;
 use crate::{ChannelHub, Connection};
+use crate::presence_hub::PresenceHub;
 
 pub async fn websocket(
     ws: WebSocketUpgrade,
@@ -15,6 +16,7 @@ pub async fn websocket(
     State(session): State<Arc<SessionStore>>,
     State(event_bus): State<Arc<EventBus>>,
     State(channel_hub): State<Arc<ChannelHub>>,
+    State(presence_hub): State<Arc<PresenceHub>>,
 ) -> Result<Response, ApiError> {
     let session = session
         .find(query.token.as_str())
@@ -25,7 +27,7 @@ pub async fn websocket(
 
     Ok(ws
         .on_upgrade(|_socket| async move {
-            handle_socket(_socket, connection, channel_hub, event_bus).await
+            handle_socket(_socket, connection, channel_hub, presence_hub, event_bus).await
         })
         .into_response())
 }

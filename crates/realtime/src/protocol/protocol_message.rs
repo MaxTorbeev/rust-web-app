@@ -77,4 +77,15 @@ impl ProtocolMessage {
       connection_id: None,
     }
   }
+
+  pub fn presence(channel: &str, presence: Vec<PresenceMessage>) -> Self {
+    Self {
+      action: ProtocolAction::Presence,
+      channel: Some(channel.to_string()),
+      messages: None,
+      presence: None,
+      msg_serial: None,
+      connection_id: None,
+    }
+  }
 }

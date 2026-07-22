@@ -5,12 +5,14 @@ use futures_util::stream::SplitSink;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::UnboundedReceiver;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, ProtocolAction, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
+use crate::{ChannelHub, Connection, PresenceAction, ProtocolAction, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
+use crate::presence_hub::PresenceHub;
 
 pub async fn handle_socket(
   socket: WebSocket,
   connection: Connection,
   channel_hub: Arc<ChannelHub>,
+  presence_hub: Arc<PresenceHub>,
   event_bus: Arc<EventBus>,
 ) {
 
@@ -76,7 +78,46 @@ pub async fn handle_socket(
             None => ProtocolMessage::nack(message.msg_serial)
           },
 
-          ProtocolAction::Presence => ProtocolMessage::ack(&message),
+          ProtocolAction::Presence => match message.channel.as_deref() {
+            Some(channel) => {
+              if !channel_hub.is_attached(channel, &connection.id).await {
+                ProtocolMessage::nack(message.msg_serial)
+              } else {
+                let incoming_presence = message.presence.clone().unwrap_or_default();
+                let mut changed_presence = Vec::new();
+
+                for presence in incoming_presence {
+                  let changed = match presence.action.clone() {
+                    PresenceAction::Enter => {
+                      Some(presence_hub.enter(channel, &connection, presence).await)
+                    }
+                    PresenceAction::Update => {
+                      presence_hub.update(channel, &connection, presence).await
+                    }
+                    PresenceAction::Leave => {
+                      presence_hub.leave(channel, &connection.id).await
+                    }
+                    _ => None
+                  };
+
+                  if let Some(presence) = changed {
+                    changed_presence.push(presence);
+                  }
+                }
+
+                if changed_presence.is_empty() {
+                  ProtocolMessage::nack(message.msg_serial)
+                } else {
+                  channel_hub
+                    .broadcast(channel, ProtocolMessage::presence(channel, changed_presence))
+                    .await;
+
+                  ProtocolMessage::ack(&message)
+                }
+              }
+            }
+            None => ProtocolMessage::nack(message.msg_serial)
+          },
           ProtocolAction::Message => match message.channel.as_deref() {
             Some(channel) => {
               channel_hub
