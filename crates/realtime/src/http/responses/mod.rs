@@ -1,5 +1,3 @@
-mod websocket;
 mod broadcast_message;
 
-pub use websocket::*;
 pub use broadcast_message::*;

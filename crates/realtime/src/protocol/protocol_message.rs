@@ -122,4 +122,18 @@ impl ProtocolMessage {
       count: None,
     }
   }
+
+  pub fn message(channel: &str, messages: Vec<Message>) -> Self {
+    Self {
+      action: ProtocolAction::Message,
+      channel: Some(channel.to_string()),
+      messages: Some(messages),
+      presence: None,
+      msg_serial: None,
+      connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
+    }
+  }
 }
