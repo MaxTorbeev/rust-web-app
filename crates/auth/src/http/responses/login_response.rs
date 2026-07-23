@@ -11,7 +11,7 @@ pub struct LoginResponse {
 impl LoginResponse {
   pub fn new(access_token: String, user: UserIdentity) -> Self {
     Self {
-      token_type:  "Bearer".to_string(),
+      token_type: "Bearer".to_string(),
       access_token,
       user
     }

@@ -1,4 +1,3 @@
-use futures_util::stream::Count;
 use serde::{Deserialize, Serialize};
 use crate::{Connection, ConnectionDetails, Message, PresenceMessage, ProtocolAction};
 

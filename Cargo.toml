@@ -8,6 +8,7 @@ dotenvy = "0.15"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = "0.8.9"
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tokio = { version = "1.52.3", features = ["full"] }
 redis-client = { path = "crates/redis-client" }
 realtime = { path = "crates/realtime" }

@@ -1,4 +1,3 @@
-use serde::{Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
 #[derive(Serialize_repr, Deserialize_repr, Clone)]

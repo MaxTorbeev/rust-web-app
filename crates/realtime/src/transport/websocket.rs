@@ -7,7 +7,15 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, PresenceAction, ProtocolAction, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
+use crate::{
+  ChannelHub,
+  Connection,
+  PresenceAction,
+  ProtocolAction,
+  ProtocolMessage,
+  WebsocketConnected,
+  WebsocketDisconnected
+};
 use crate::channel::presence_hub::PresenceHub;
 
 pub async fn handle_socket(
