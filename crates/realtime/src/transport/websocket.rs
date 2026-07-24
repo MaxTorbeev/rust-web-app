@@ -153,6 +153,15 @@ pub async fn handle_socket(
             None => ProtocolMessage::nack(message.msg_serial)
           },
           ProtocolAction::Heartbeat => ProtocolMessage::heartbeat(),
+          ProtocolAction::Detach => match message.channel.as_deref() {
+            Some(channel) => {
+              presence_hub.leave(channel, &connection.id).await;
+              channel_hub.detach(channel, &connection.id).await;
+
+              ProtocolMessage::detached(&message)
+            }
+            None => ProtocolMessage::nack(message.msg_serial)
+          }
           _ => continue,
         };
 

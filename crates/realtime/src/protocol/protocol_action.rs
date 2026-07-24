@@ -15,6 +15,8 @@ pub enum ProtocolAction {
   Error = 9,
   Attach = 10,
   Attached = 11,
+  Detach = 12,
+  Detached = 13,
   Presence = 14,
   Message = 15,
   Sync = 16,

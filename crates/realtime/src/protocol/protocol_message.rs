@@ -136,4 +136,18 @@ impl ProtocolMessage {
       count: None,
     }
   }
+
+  pub fn detached(message: &ProtocolMessage) -> Self {
+    Self {
+      action: ProtocolAction::Detached,
+      channel: message.channel.clone(),
+      messages: None,
+      presence: None,
+      msg_serial: message.msg_serial,
+      connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
+    }
+  }
 }
