@@ -82,6 +82,8 @@ pub async fn handle_socket(
           }
         };
 
+        let mut should_disconnect = false;
+
         let response = match message.action {
           ProtocolAction::Connect => ProtocolMessage::connected(&connection),
 
@@ -91,6 +93,11 @@ pub async fn handle_socket(
               ProtocolMessage::connected(&connection)
             }
             None => ProtocolMessage::nack(message.msg_serial)
+          },
+
+          ProtocolAction::Disconnect => {
+            should_disconnect = true;
+            ProtocolMessage::disconnected()
           },
 
           ProtocolAction::Attach => match message.channel.as_deref() {
@@ -161,12 +168,17 @@ pub async fn handle_socket(
               ProtocolMessage::detached(&message)
             }
             None => ProtocolMessage::nack(message.msg_serial)
-          }
+          },
           _ => continue,
         };
 
         if sender.send(response).is_err() {
           tracing::error!("websocket outgoing queue closed");
+          break;
+        }
+
+        if should_disconnect {
+          heartbeat_task.abort();
           break;
         }
       }

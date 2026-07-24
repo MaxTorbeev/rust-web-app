@@ -150,4 +150,18 @@ impl ProtocolMessage {
       count: None,
     }
   }
+
+  pub fn disconnected() -> Self {
+    Self {
+      action: ProtocolAction::Disconnected,
+      channel: None,
+      messages: None,
+      presence: None,
+      msg_serial: None,
+      connection_id: None,
+      connection_details: None,
+      auth: None,
+      count: None,
+    }
+  }
 }
