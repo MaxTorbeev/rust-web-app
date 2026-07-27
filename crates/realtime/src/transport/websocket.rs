@@ -7,16 +7,9 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{
-  ChannelHub,
-  Connection,
-  PresenceAction,
-  ProtocolAction,
-  ProtocolMessage,
-  WebsocketConnected,
-  WebsocketDisconnected
-};
+use crate::{ChannelHub, Connection, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
 use crate::channel::presence_hub::PresenceHub;
+use crate::protocol_handlers::{handle_protocol_message, SocketContext, ProtocolHandleResult};
 
 pub async fn handle_socket(
   socket: WebSocket,
@@ -82,102 +75,27 @@ pub async fn handle_socket(
           }
         };
 
-        let mut should_disconnect = false;
-
-        let response = match message.action {
-          ProtocolAction::Connect => ProtocolMessage::connected(&connection),
-
-          ProtocolAction::Auth => match message.auth.as_ref() {
-            Some(auth) => {
-              // validate auth.access_tolen
-              ProtocolMessage::connected(&connection)
-            }
-            None => ProtocolMessage::nack(message.msg_serial)
-          },
-
-          ProtocolAction::Disconnect => {
-            should_disconnect = true;
-            ProtocolMessage::disconnected()
-          },
-
-          ProtocolAction::Attach => match message.channel.as_deref() {
-            Some(channel) => {
-              channel_hub.attach(channel, connection.id.clone(), sender.clone()).await;
-
-              ProtocolMessage::attached(&message)
-            },
-            None => ProtocolMessage::nack(message.msg_serial)
-          },
-
-          ProtocolAction::Presence => match message.channel.as_deref() {
-            Some(channel) => {
-              if !channel_hub.is_attached(channel, &connection.id).await {
-                ProtocolMessage::nack(message.msg_serial)
-              } else {
-                let incoming_presence = message.presence.clone().unwrap_or_default();
-                let mut changed_presence = Vec::new();
-
-                for presence in incoming_presence {
-                  let changed = match presence.action.clone() {
-                    PresenceAction::Enter => {
-                      Some(presence_hub.enter(channel, &connection, presence).await)
-                    }
-                    PresenceAction::Update => {
-                      presence_hub.update(channel, &connection, presence).await
-                    }
-                    PresenceAction::Leave => {
-                      presence_hub.leave(channel, &connection.id).await
-                    }
-                    _ => None
-                  };
-
-                  if let Some(presence) = changed {
-                    changed_presence.push(presence);
-                  }
-                }
-
-                if changed_presence.is_empty() {
-                  ProtocolMessage::nack(message.msg_serial)
-                } else {
-                  channel_hub
-                    .broadcast(channel, ProtocolMessage::presence(channel, changed_presence))
-                    .await;
-
-                  ProtocolMessage::ack(&message)
-                }
-              }
-            }
-            None => ProtocolMessage::nack(message.msg_serial)
-          },
-          ProtocolAction::Message => match message.channel.as_deref() {
-            Some(channel) => {
-              channel_hub
-                .broadcast(channel, message.clone())
-                .await;
-
-              ProtocolMessage::ack(&message)
-            },
-            None => ProtocolMessage::nack(message.msg_serial)
-          },
-          ProtocolAction::Heartbeat => ProtocolMessage::heartbeat(),
-          ProtocolAction::Detach => match message.channel.as_deref() {
-            Some(channel) => {
-              presence_hub.leave(channel, &connection.id).await;
-              channel_hub.detach(channel, &connection.id).await;
-
-              ProtocolMessage::detached(&message)
-            }
-            None => ProtocolMessage::nack(message.msg_serial)
-          },
-          _ => continue,
+        let context = SocketContext {
+          connection: &connection,
+          sender: &sender,
+          presence_hub: &presence_hub,
+          channel_hub: &channel_hub,
         };
 
-        if sender.send(response).is_err() {
-          tracing::error!("websocket outgoing queue closed");
-          break;
+        let ProtocolHandleResult {
+          response,
+          disconnect
+        } = handle_protocol_message(message, &context).await;
+
+        if let Some(response) = response {
+          if sender.send(response).is_err() {
+            tracing::error!("websocket outgoing queue closed");
+            break;
+          }
         }
 
-        if should_disconnect {
+
+        if disconnect {
           heartbeat_task.abort();
           break;
         }
