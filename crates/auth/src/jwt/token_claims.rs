@@ -1,10 +1,11 @@
 use serde::Deserialize;
-use crate::TokenCapability;
 
 #[derive(Debug, Deserialize)]
 pub struct TokenClaims {
-  pub iat: Option<u64>,
+  pub iat: u64,
   pub exp: u64,
-  pub client_id: String,
-  pub capability: TokenCapability,
+  #[serde(rename = "x-ably-clientId")]
+  pub client_id: Option<String>,
+  #[serde(rename = "x-ably-capability")]
+  pub capability: String,
 }
