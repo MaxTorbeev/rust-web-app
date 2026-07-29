@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use base64::engine::Config;
-use auth::TokenAccessVerifier;
+use auth::{TokenAccessIssuer, TokenAccessVerifier};
 use crate::{ApplicationId, RealtimeApplication, RealtimeConfig};
 
 pub struct ApplicationRegistry {
@@ -16,13 +16,25 @@ impl ApplicationRegistry {
   }
 
   pub fn from_config(config: RealtimeConfig) -> Self {
+    let RealtimeConfig {
+      application_id,
+      key_name,
+      key_secret,
+    } = config;
+
     let token_verified = TokenAccessVerifier::new(
-      config.key_name,
-      config.key_secret.as_bytes(),
+      key_name.clone(),
+      key_secret.as_bytes(),
+    );
+
+    let token_issuer = TokenAccessIssuer::new(
+      key_name.clone(),
+      key_secret.as_bytes()
     );
 
     let application = RealtimeApplication::new(
-      config.application_id,
+      application_id,
+      token_issuer,
       token_verified,
     );
 

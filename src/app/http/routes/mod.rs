@@ -4,10 +4,11 @@ use crate::app::state::AppState;
 use axum::routing::post;
 use axum::{Router, routing::get};
 use auth::{check, login};
-use realtime::routes::{broadcast_message, websocket};
+use realtime::routes::{access_token, broadcast_message, websocket};
 
 pub fn init(state: AppState) -> Router {
     Router::new()
+        .route("/auth/realtime/{application_id}/token", post(access_token))
         .route("/auth/login", post(login))
         .route("/auth/check", get(check))
         .route("/", get(websocket))

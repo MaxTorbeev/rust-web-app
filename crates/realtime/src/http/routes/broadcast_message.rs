@@ -23,6 +23,8 @@ pub async fn broadcast_message(
       ApiError::unauthorized("Invalid access token")
     })?;
 
+  // need to check publish allows
+
   let message = Message {
     name: payload.name,
     data: payload.data,

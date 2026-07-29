@@ -9,6 +9,7 @@ mod session;
 mod token;
 mod identity;
 mod jwt;
+mod extractors;
 
 pub use self::config::AuthConfig;
 pub use self::http::routes::login;
@@ -18,3 +19,4 @@ pub use self::session::*;
 pub use self::token::*;
 pub use self::identity::UserIdentity;
 pub use self::jwt::*;
+pub use self::extractors::*;

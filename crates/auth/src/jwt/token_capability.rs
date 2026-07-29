@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(transparent)]
 pub struct TokenCapability {
   resources: HashMap<String, HashSet<String>>,

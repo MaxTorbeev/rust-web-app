@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use auth::{TokenAccessVerifier, TokenVerifyError, VerifiedToken};
+use auth::{TokenAccessVerifier, TokenCapability, TokenIssueError, TokenVerifyError, VerifiedToken};
 use crate::{ApplicationId, ApplicationKeyName, ApplicationRegistry, RealtimeApplication, RealtimeConfig};
 
 pub struct Realtime {
@@ -15,11 +15,18 @@ pub enum RealtimeAuthError {
   InvalidKeyName(String),
   UnknownApplication(ApplicationId),
   TokenVerification(TokenVerifyError),
+  TokenIssuance(TokenIssueError),
 }
 
 impl From<TokenVerifyError> for RealtimeAuthError {
   fn from(err: TokenVerifyError) -> Self {
     Self::TokenVerification(err)
+  }
+}
+
+impl From<TokenIssueError> for RealtimeAuthError {
+  fn from(error: TokenIssueError) -> Self {
+    Self::TokenIssuance(error)
   }
 }
 
@@ -61,5 +68,25 @@ impl Realtime {
       application,
       token,
     })
+  }
+
+  pub fn issue_access_token(
+    &self,
+    application_id: &ApplicationId,
+    client_id: String,
+    capability: &TokenCapability,
+    ttl_seconds: u64
+  ) -> Result<String, RealtimeAuthError> {
+    let application = self
+      .application(application_id)
+      .ok_or_else(|| {
+        RealtimeAuthError::UnknownApplication(application_id.clone())
+      })?;
+
+    let token = application
+      .token_issuer
+      .issue(Some(client_id), capability, ttl_seconds)?;
+
+    Ok(token)
   }
 }
