@@ -7,15 +7,14 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, ProtocolMessage, WebsocketConnected, WebsocketDisconnected};
+use crate::{ChannelHub, Connection, ProtocolMessage, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
 use crate::channel::presence_hub::PresenceHub;
 use crate::protocol_handlers::{handle_protocol_message, SocketContext, ProtocolHandleResult};
 
 pub async fn handle_socket(
   socket: WebSocket,
   connection: Connection,
-  channel_hub: Arc<ChannelHub>,
-  presence_hub: Arc<PresenceHub>,
+  application: Arc<RealtimeApplication>,
   event_bus: Arc<EventBus>,
 ) {
 
@@ -78,8 +77,8 @@ pub async fn handle_socket(
         let context = SocketContext {
           connection: &connection,
           sender: &sender,
-          presence_hub: &presence_hub,
-          channel_hub: &channel_hub,
+          presence_hub: &application.presence_hub,
+          channel_hub: &application.channel_hub,
         };
 
         let ProtocolHandleResult {
@@ -105,7 +104,11 @@ pub async fn handle_socket(
   }
 
   // Disconnection
-  disconnect_socket(&connection, channel_hub, presence_hub).await;
+  disconnect_socket(
+    &connection,
+    application.channel_hub.clone(),
+    application.presence_hub.clone()
+  ).await;
 
   // Read loop finished
   writer_task.abort();

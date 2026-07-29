@@ -7,32 +7,29 @@ use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection};
+use crate::{ChannelHub, Connection, Realtime, RealtimeAccess};
 use crate::presence_hub::PresenceHub;
 
 pub async fn websocket(
     ws: WebSocketUpgrade,
     Query(query): Query<WebSocketQuery>,
-    State(session): State<Arc<SessionStore>>,
     State(event_bus): State<Arc<EventBus>>,
-    State(channel_hub): State<Arc<ChannelHub>>,
-    State(presence_hub): State<Arc<PresenceHub>>,
+    State(realtime): State<Arc<Realtime>>,
 ) -> Result<Response, ApiError> {
-    
-    // let session = session
-    //     .find(query.access_token.as_str())
-    //     .await
-    //     .map_err(|_e| ApiError::unauthorized("Invalid token"))?;
+    let RealtimeAccess {
+        application,
+        token,
+    } = realtime
+      .verify_access_token(&query.access_token)
+      .map_err(|e| {
+          ApiError::unauthorized("Invalid access token")
+      })?;
 
-    let user = UserIdentity {
-        login: "maxtor".parse().unwrap()
-    };
-
-    let connection = Connection::new(user);
+    let connection = Connection::new(token);
 
     Ok(ws
         .on_upgrade(|_socket| async move {
-            handle_socket(_socket, connection, channel_hub, presence_hub, event_bus).await
+            handle_socket(_socket, connection, application, event_bus).await
         })
         .into_response())
 }

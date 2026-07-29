@@ -1,0 +1,54 @@
+use std::collections::HashMap;
+use std::sync::Arc;
+use base64::engine::Config;
+use auth::TokenAccessVerifier;
+use crate::{ApplicationId, RealtimeApplication, RealtimeConfig};
+
+pub struct ApplicationRegistry {
+  applications: HashMap<ApplicationId, Arc<RealtimeApplication>>,
+}
+
+impl ApplicationRegistry {
+  pub fn new() -> Self {
+    Self {
+      applications: HashMap::new(),
+    }
+  }
+
+  pub fn from_config(config: RealtimeConfig) -> Self {
+    let token_verified = TokenAccessVerifier::new(
+      config.key_name,
+      config.key_secret.as_bytes(),
+    );
+
+    let application = RealtimeApplication::new(
+      config.application_id,
+      token_verified,
+    );
+
+    let mut registry = Self::new();
+
+    let previous = registry.insert(application);
+
+    debug_assert!(previous.is_none());
+
+    registry
+  }
+
+  pub fn insert(&mut self, application: RealtimeApplication) -> Option<Arc<RealtimeApplication>> {
+    let application = Arc::new(application);
+
+    self.applications
+      .insert(application.id.clone(), application)
+  }
+
+  pub fn get(&self, application_id: &ApplicationId) -> Option<Arc<RealtimeApplication>> {
+    self.applications.get(application_id).cloned()
+  }
+}
+
+impl Default for ApplicationRegistry {
+  fn default() -> Self {
+    Self::new()
+  }
+}

@@ -2,8 +2,7 @@ use std::sync::Arc;
 use axum::extract::FromRef;
 use auth::{AuthConfig, SessionStore};
 use event_bus::EventBus;
-use realtime::ChannelHub;
-use realtime::PresenceHub;
+use realtime::{Realtime};
 use redis_client::{RedisClient};
 
 #[derive(Clone)]
@@ -11,24 +10,25 @@ pub struct AppState {
     pub redis: Arc<RedisClient>,
     pub auth: Arc<AuthConfig>,
     pub sessions: Arc<SessionStore>,
-    pub channel_hub: Arc<ChannelHub>,
-    pub presence_hub: Arc<PresenceHub>,
-    pub event_bus: Arc<EventBus>
+    pub event_bus: Arc<EventBus>,
+    pub realtime: Arc<Realtime>
 }
 
 impl AppState {
-    pub fn new(redis: Arc<RedisClient>, auth: Arc<AuthConfig>, event_bus: Arc<EventBus>) -> Self {
+    pub fn new(
+        redis: Arc<RedisClient>,
+        auth: Arc<AuthConfig>,
+        event_bus: Arc<EventBus>,
+        realtime: Arc<Realtime>
+    ) -> Self {
         let sessions = Arc::new(SessionStore::new(redis.clone()));
-        let channel_hub = Arc::new(ChannelHub::new());
-        let presence_hub = Arc::new(PresenceHub::new());
 
         Self {
             redis,
             sessions,
             auth,
-            channel_hub,
             event_bus,
-            presence_hub
+            realtime
         }
     }
 }
@@ -45,20 +45,13 @@ impl FromRef<AppState> for Arc<SessionStore> {
     }
 }
 
-impl FromRef<AppState> for Arc<ChannelHub> {
-    fn from_ref(state: &AppState) -> Self {
-        state.channel_hub.clone()
-    }
-}
-
 impl FromRef<AppState> for Arc<EventBus> {
     fn from_ref(state: &AppState) -> Self {
         state.event_bus.clone()
     }
 }
-
-impl FromRef<AppState> for Arc<PresenceHub> {
+impl FromRef<AppState> for Arc<Realtime> {
     fn from_ref(state: &AppState) -> Self {
-        state.presence_hub.clone()
+        state.realtime.clone()
     }
 }

@@ -26,13 +26,15 @@ impl TokenAccessVerifier {
     }
   }
 
-  pub fn verify(&self, token: &str) -> Result<VerifiedToken, TokenVerifyError> {
+  pub fn unverified_key_id(token: &str) -> Result<String, TokenVerifyError> {
     let header = decode_header(token)
       .map_err(TokenVerifyError::InvalidToken)?;
 
-    let key_id = header
-      .kid
-      .ok_or(TokenVerifyError::MissingKeyId)?;
+    header.kid.ok_or(TokenVerifyError::MissingKeyId)
+  }
+
+  pub fn verify(&self, token: &str) -> Result<VerifiedToken, TokenVerifyError> {
+    let key_id = Self::unverified_key_id(token)?;
 
     if key_id != self.key_name {
       return Err(TokenVerifyError::UnexpectedKeyId {

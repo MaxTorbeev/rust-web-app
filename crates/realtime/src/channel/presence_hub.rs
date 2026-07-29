@@ -141,7 +141,7 @@ impl PresenceHub {
   ) -> PresenceMessage {
     presence.action = action;
     presence.id = Some(uuid::Uuid::new_v4().to_string());
-    presence.client_id = Some(connection.user.login.clone());
+    presence.client_id = connection.client_id().map(str::to_owned);
     presence.connection_id = Some(connection.id.as_str().to_string());
     presence.timestamp = Some(Timestamp::now().to_string());
 
