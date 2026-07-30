@@ -11,11 +11,11 @@ use crate::{
   presence
 };
 use std::sync::Arc;
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::sync::mpsc::{Sender};
 
 pub struct SocketContext<'a> {
     pub connection: &'a Connection,
-    pub sender: &'a UnboundedSender<ProtocolMessage>,
+    pub sender: &'a Sender<ProtocolMessage>,
     pub channel_hub: &'a Arc<ChannelHub>,
     pub presence_hub: &'a Arc<PresenceHub>,
 }

@@ -21,7 +21,7 @@ pub async fn websocket(
         token,
     } = realtime
       .verify_access_token(&query.access_token)
-      .map_err(|e| {
+      .map_err(|_| {
           ApiError::unauthorized("Invalid access token")
       })?;
 

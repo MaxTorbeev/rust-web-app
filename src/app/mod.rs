@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use auth::AuthConfig;
 use event_bus::EventBus;
-use realtime::{ApplicationRegistry, Realtime, RealtimeApplication, RealtimeConfig};
+use realtime::{Realtime, RealtimeConfig};
 use crate::app::config::{HttpConfig};
 use redis_client::{RedisClient, RedisConfig};
 
@@ -34,7 +34,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let routes = http::routes::init(app_state);
 
     // run our app with hyper, listening globally on port 3000
-    let listener = tokio::net::TcpListener::bind(HttpConfig::from_env().unwrap().url).await?;
+    let listener = tokio::net::TcpListener::bind(HttpConfig::from_env()?.url).await?;
 
     axum::serve(listener, routes).await?;
 

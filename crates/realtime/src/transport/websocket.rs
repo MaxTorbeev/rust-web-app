@@ -4,12 +4,14 @@ use axum::extract::ws::{Message as WsMessage, Message, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::SplitSink;
 use tokio::sync::mpsc;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
+use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
 use crate::{ChannelHub, Connection, ProtocolMessage, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
 use crate::channel::presence_hub::PresenceHub;
 use crate::protocol_handlers::{handle_protocol_message, SocketContext, ProtocolHandleResult};
+
+const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 
 pub async fn handle_socket(
   socket: WebSocket,
@@ -25,7 +27,7 @@ pub async fn handle_socket(
   let (
     sender,
     mut receiver
-  ) = mpsc::unbounded_channel::<ProtocolMessage>();
+  ) = mpsc::channel::<ProtocolMessage>(OUTBOUND_QUEUE_CAPACITY);
 
   let (mut socket_sender, mut socket_receiver) = socket.split();
 
@@ -34,7 +36,7 @@ pub async fn handle_socket(
     writer_loop(&mut receiver, &mut socket_sender).await;
   });
 
-  if sender.send(ProtocolMessage::connected(&connection)).is_err() {
+  if sender.send(ProtocolMessage::connected(&connection)).await.is_err() {
     tracing::error!("websocket outgoing queue closed");
     return;
   }
@@ -65,7 +67,7 @@ pub async fn handle_socket(
 
             let response = ProtocolMessage::nack(None);
 
-            if sender.send(response).is_err() {
+            if sender.send(response).await.is_err() {
               tracing::error!("websocket outgoing queue closed");
               break;
             }
@@ -87,7 +89,7 @@ pub async fn handle_socket(
         } = handle_protocol_message(message, &context).await;
 
         if let Some(response) = response {
-          if sender.send(response).is_err() {
+          if sender.send(response).await.is_err() {
             tracing::error!("websocket outgoing queue closed");
             break;
           }
@@ -120,7 +122,7 @@ pub async fn handle_socket(
   }).await;
 }
 
-fn make_heartbeat_task(sender: &UnboundedSender<ProtocolMessage>) -> JoinHandle<()> {
+fn make_heartbeat_task(sender: &Sender<ProtocolMessage>) -> JoinHandle<()> {
   tokio::spawn({
     let sender = sender.clone();
 
@@ -128,7 +130,7 @@ fn make_heartbeat_task(sender: &UnboundedSender<ProtocolMessage>) -> JoinHandle<
       loop {
         tokio::time::sleep(Duration::from_millis(10_000)).await;
 
-        if sender.send(ProtocolMessage::heartbeat()).is_err() {
+        if sender.send(ProtocolMessage::heartbeat()).await.is_err() {
           break;
         }
       }
@@ -148,7 +150,7 @@ async fn disconnect_socket(connection: &Connection, channel_hub: Arc<ChannelHub>
   }
 }
 
-async fn writer_loop(receiver: &mut UnboundedReceiver<ProtocolMessage>, socket_sender: &mut SplitSink<WebSocket, Message>) {
+async fn writer_loop(receiver: &mut Receiver<ProtocolMessage>, socket_sender: &mut SplitSink<WebSocket, Message>) {
   while let Some(message) = receiver.recv().await {
     let text = match serde_json::to_string(&message) {
       Ok(text) => text,

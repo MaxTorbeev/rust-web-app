@@ -4,7 +4,7 @@ use crate::{ConnectionId, ProtocolMessage};
 
 // One sender per active WebSocket connection. ChannelHub stores it so broadcasts
 // can enqueue ProtocolMessage values without owning the WebSocket itself.
-pub type ConnectionSender = mpsc::UnboundedSender<ProtocolMessage>;
+pub type ConnectionSender = mpsc::Sender<ProtocolMessage>;
 
 #[derive(Default)]
 pub struct ChannelHubState {
@@ -70,7 +70,7 @@ impl ChannelHub {
     let mut failed_connections = Vec::new();
 
     for (connection_id, sender) in targets {
-      if sender.send(message.clone()).is_ok() {
+      if sender.send(message.clone()).await.is_ok() {
         sent += 1;
       } else {
         failed_connections.push(connection_id);

@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use base64::engine::Config;
 use auth::{TokenAccessIssuer, TokenAccessVerifier};
 use crate::{ApplicationId, RealtimeApplication, RealtimeConfig};
 
