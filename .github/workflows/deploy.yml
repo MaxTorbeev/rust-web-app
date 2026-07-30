@@ -98,7 +98,7 @@ jobs:
     timeout-minutes: 15
 
     environment:
-      name: staging
+      name: Staging
 
     permissions:
       contents: read
