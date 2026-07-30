@@ -111,8 +111,10 @@ jobs:
 
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
 
-      PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+      APP_REALTIME_API_KEY: ${{ secrets.APP_REALTIME_API_KEY }}
+      APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
 
       IMAGE: ${{ needs.build.outputs.image }}
       DEPLOY_DIRECTORY: rust-web-app
@@ -139,13 +141,37 @@ jobs:
         shell: bash
         run: |
           environment_file="$RUNNER_TEMP/production.env"
-
+          
           install -m 600 /dev/null "$environment_file"
-
-          printf '%s\n' "$PRODUCTION_ENV" \
-            > "$environment_file"
-
-          printf '\nAPP_IMAGE=%s\n' "$IMAGE" \
+          
+          for variable_name in \
+            REDIS_PASSWORD \
+            APP_REALTIME_API_KEY \
+            APP_AUTH_LOGIN \
+            APP_AUTH_PASSWORD_HASH
+          do
+            if [ -z "${!variable_name:-}" ]; then
+              echo "::error::${variable_name} is not configured"
+              exit 1
+            fi
+          done
+          
+          printf 'RUST_LOG=%s\n' "${RUST_LOG:-info}" \
+            >> "$environment_file"
+          
+          printf 'REDIS_PASSWORD=%s\n' "$REDIS_PASSWORD" \
+            >> "$environment_file"
+          
+          printf 'APP_REALTIME_API_KEY=%s\n' "$APP_REALTIME_API_KEY" \
+            >> "$environment_file"
+          
+          printf 'APP_AUTH_LOGIN=%s\n' "$APP_AUTH_LOGIN" \
+            >> "$environment_file"
+          
+          printf "APP_AUTH_PASSWORD_HASH='%s'\n" "$APP_AUTH_PASSWORD_HASH" \
+            >> "$environment_file"
+          
+          printf 'APP_IMAGE=%s\n' "$IMAGE" \
             >> "$environment_file"
 
       - name: Create deployment directory
