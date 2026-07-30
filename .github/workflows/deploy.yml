@@ -113,6 +113,7 @@ jobs:
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
 
+      APP_AUTH_LOGIN: ${{ vars.APP_AUTH_LOGIN }}
       APP_REALTIME_API_KEY: ${{ secrets.APP_REALTIME_API_KEY }}
       APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
 
