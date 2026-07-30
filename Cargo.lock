@@ -1578,7 +1578,7 @@ dependencies = [
 
 [[package]]
 name = "rust-web-app"
-version = "0.1.0"
+version = "0.0.2-alpha"
 dependencies = [
  "auth",
  "axum",

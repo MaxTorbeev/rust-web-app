@@ -1,4 +1,6 @@
 //! Public HTTP routes for the HLS switcher.
+//! 
+mod health;
 
 use crate::app::state::AppState;
 use axum::routing::post;

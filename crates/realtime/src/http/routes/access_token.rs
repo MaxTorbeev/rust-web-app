@@ -1,54 +1,44 @@
-use std::sync::Arc;
-use axum::extract::{Path, State};
-use api_response::{ApiError, ApiResponse};
-use auth::{BearerToken, SessionStore, TokenCapability};
-use crate::{ApplicationId, Realtime};
+use crate::requests::AccessTokenRequest;
 use crate::responses::AccessTokenResponse;
+use crate::{ApplicationId, Realtime};
+use api_response::{ApiError, ApiResponse};
+use auth::TokenCapability;
+use axum::Json;
+use axum::extract::{Path, State};
+use std::sync::Arc;
 
 pub async fn access_token(
-  Path(application_id): Path<String>,
-  bearer_token: BearerToken,
-  State(session): State<Arc<SessionStore>>,
-  State(realtime): State<Arc<Realtime>>,
+    Path(application_id): Path<String>,
+    State(realtime): State<Arc<Realtime>>,
+    Json(payload): Json<AccessTokenRequest>,
 ) -> Result<ApiResponse<AccessTokenResponse>, ApiError> {
-  let ttl_seconds = 60;
+    let ttl_seconds = 60;
 
-  let _session_store = session
-    .find(bearer_token.as_str())
-    .await
-    .map_err(|e| {
-      ApiError::unauthorized("Invalid session")
-    });
+    let application_id = ApplicationId::new(application_id);
+    let client_id = payload.client_id;
 
-  let application_id = ApplicationId::new(application_id);
+    // temporary capability
+    let capability = r#"{"*": ["publish", "subscribe", "presence"]}"#
+        .parse::<TokenCapability>()
+        .expect("static realtime capability must be valid");
 
-  // temporary client id
-  let client_id = "maxtor".to_string();
+    let jwt = realtime
+        .issue_access_token(
+            &application_id,
+            client_id.clone(),
+            &capability,
+            ttl_seconds,
+        )
+        .map_err(|_| ApiError::unauthorized("Unauthorized"))?;
 
-  // temporary capability
-  let capability = r#"{"*": ["publish", "subscribe", "presence"]}"#
-    .parse::<TokenCapability>()
-    .expect("static realtime capability must be valid");
+    let app_id = application_id.as_str();
 
+    let response = AccessTokenResponse {
+        application_id: app_id.to_string(),
+        client_id,
+        jwt,
+        ttl_seconds,
+    };
 
-  let jwt = realtime.issue_access_token(
-    &application_id.clone(),
-    client_id.clone(),
-    &capability,
-    ttl_seconds,
-  ).map_err(|_| {
-    ApiError::unauthorized("Unauthorized")
-  })?;
-
-
-  let app_id = application_id.as_str();
-
-  let response = AccessTokenResponse {
-    application_id: app_id.to_string(),
-    client_id,
-    jwt,
-    ttl_seconds
-  };
-
-  Ok(ApiResponse::new(response))
+    Ok(ApiResponse::new(response))
 }
