@@ -1,0 +1,105 @@
+#cloud-config
+
+users:
+  - default
+  - name: deploy
+    gecos: Deployment user
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys:
+      # Публичная часть ключа из GitHub secret DEPLOY_SSH_KEY.
+      - ssh-ed25519 REPLACE_WITH_DEPLOY_PUBLIC_KEY deploy@github-actions
+
+disable_root: true
+ssh_pwauth: false
+
+write_files:
+  - path: /usr/local/sbin/install-docker.sh
+    owner: root:root
+    permissions: "0755"
+    content: |
+      #!/usr/bin/env bash
+      set -Eeuo pipefail
+
+      export DEBIAN_FRONTEND=noninteractive
+
+      source /etc/os-release
+
+      if [[ "${ID}" != "ubuntu" ]]; then
+        echo "This cloud-init supports Ubuntu only" >&2
+        exit 1
+      fi
+
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl
+
+      # Удаляем пакеты, конфликтующие с официальными пакетами Docker.
+      for package in \
+        docker.io \
+        docker-compose \
+        docker-compose-v2 \
+        docker-doc \
+        podman-docker \
+        containerd \
+        runc
+      do
+        apt-get remove -y "${package}" >/dev/null 2>&1 || true
+      done
+
+      install -m 0755 -d /etc/apt/keyrings
+
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+        -o /etc/apt/keyrings/docker.asc
+
+      chmod a+r /etc/apt/keyrings/docker.asc
+
+      architecture="$(dpkg --print-architecture)"
+      codename="${UBUNTU_CODENAME:-${VERSION_CODENAME}}"
+
+      cat > /etc/apt/sources.list.d/docker.sources <<EOF
+      Types: deb
+      URIs: https://download.docker.com/linux/ubuntu
+      Suites: ${codename}
+      Components: stable
+      Architectures: ${architecture}
+      Signed-By: /etc/apt/keyrings/docker.asc
+      EOF
+
+      # Ограничиваем размер логов контейнеров.
+      install -m 0755 -d /etc/docker
+
+      cat > /etc/docker/daemon.json <<EOF
+      {
+        "log-driver": "local",
+        "live-restore": true
+      }
+      EOF
+
+      apt-get update
+      apt-get install -y --no-install-recommends \
+        docker-ce \
+        docker-ce-cli \
+        containerd.io \
+        docker-buildx-plugin \
+        docker-compose-plugin
+
+      systemctl enable --now containerd.service
+      systemctl enable --now docker.service
+
+      # Позволяет GitHub Actions выполнять docker без sudo.
+      usermod -aG docker deploy
+
+      install -d -m 0750 -o deploy -g deploy \
+        /home/deploy/rust-web-app \
+        /home/deploy/rust-web-app/deploy \
+        /home/deploy/rust-web-app/deploy/nginx
+
+      runuser -u deploy -- docker version
+      runuser -u deploy -- docker compose version
+
+runcmd:
+  - ["/usr/local/sbin/install-docker.sh"]
+
+final_message: "Docker installation completed in $UPTIME seconds"

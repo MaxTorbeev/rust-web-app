@@ -1,0 +1,65 @@
+name: rust-web-app
+
+services:
+  app:
+    image: ${APP_IMAGE:-rust-web-app:local}
+
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    restart: unless-stopped
+    init: true
+
+    env_file:
+      - .env
+
+    environment:
+      APP_URL: 0.0.0.0:4008
+      APP_TLS_ENABLED: "false"
+
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+
+    ports:
+      - "127.0.0.1:4008:4008"
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:8.2.8-alpine
+    restart: unless-stopped
+
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+
+    volumes:
+      - redis-data:/data
+
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli ping | grep -q PONG
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  redis-data:
