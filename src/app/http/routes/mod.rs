@@ -1,5 +1,5 @@
 //! Public HTTP routes for the HLS switcher.
-//! 
+//!
 mod health;
 
 use crate::app::state::AppState;
@@ -14,6 +14,6 @@ pub fn init(state: AppState) -> Router {
         .route("/auth/login", post(login))
         .route("/auth/check", get(check))
         .route("/", get(websocket))
-        .route("/channel/{channel}/messages", post(broadcast_message))
+        .route("/channels/{channel}/messages", post(broadcast_message))
         .with_state(state)
 }
