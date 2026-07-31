@@ -1,29 +1,52 @@
 use std::sync::Arc;
 use axum::extract::{Path, Query, State};
+use axum::http::{header, HeaderMap, Response};
 use axum::Json;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 use api_response::{ApiError, ApiResponse};
-use crate::{ChannelHub, Message, ProtocolMessage, Realtime, RealtimeAccess};
+use crate::{ApplicationKeyName, Message, ProtocolMessage, Realtime};
 use crate::requests::broadcast_message::BroadcastMessage;
-use crate::requests::WebSocketQuery;
 use crate::responses::BroadcastMessageResponse;
 
 pub async fn broadcast_message(
   Path(channel): Path<String>,
-  Query(query): Query<WebSocketQuery>,
+  headers: HeaderMap,
   State(realtime): State<Arc<Realtime>>,
   Json(payload): Json<BroadcastMessage>,
 ) -> Result<ApiResponse<BroadcastMessageResponse>, ApiError> {
 
-  let RealtimeAccess {
-    application,
-    token,
-  } = realtime
-    .verify_access_token(&query.access_token)
-    .map_err(|_| {
-      ApiError::unauthorized("Invalid access token")
-    })?;
+  let authorization = headers
+    .get(header::AUTHORIZATION)
+    .and_then(|value| value.to_str().ok())
+    .ok_or_else(|| ApiError::unauthorized("Missing Basic credentials"))?;
 
-  // need to check publish allows
+  let (_scheme, encoded) = authorization
+    .split_once(' ')
+    .ok_or_else(|| ApiError::unauthorized("Invalid Basic credentials"))?;
+
+  let decoded = STANDARD
+    .decode(encoded)
+    .map_err(|_| ApiError::unauthorized("Error"))?;
+
+  let decoded = String::from_utf8(decoded)
+    .map_err(|_| ApiError::unauthorized("Error"))?;
+
+  let (key_name, _key_secret) = decoded
+    .split_once(':')
+    .ok_or_else(|| ApiError::unauthorized("Invalid credentials"))?;
+
+  tracing::debug!("key_name: {:?}", key_name);
+
+  let app_key_name = key_name
+    .parse::<ApplicationKeyName>()
+    .map_err(|_| ApiError::unauthorized("Invalid credentials"))?;
+
+  let app_id = app_key_name.application_id();
+
+  let application = realtime
+    .application(app_id)
+    .ok_or_else(|| ApiError::unauthorized("Unknown application"))?;
 
   let message = Message {
     name: payload.name,
