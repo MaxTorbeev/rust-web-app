@@ -36,7 +36,7 @@ server {
     client_max_body_size 2m;
 
     location / {
-        proxy_pass http://app:4008;
+        proxy_pass http://web:8080;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;

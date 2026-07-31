@@ -24,6 +24,21 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.2
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
       - name: Install Rust
         run: |
           rustup toolchain install 1.94.1 --profile minimal
@@ -46,6 +61,7 @@ jobs:
 
     outputs:
       image: ${{ steps.image.outputs.value }}
+      web_image: ${{ steps.image.outputs.web }}
 
     steps:
       - name: Checkout repository
@@ -57,9 +73,11 @@ jobs:
         run: |
           repository="ghcr.io/${GITHUB_REPOSITORY,,}"
           image="${repository}:${GITHUB_SHA}"
+          web_image="${repository}:web-${GITHUB_SHA}"
 
           echo "repository=${repository}" >> "$GITHUB_OUTPUT"
           echo "value=${image}" >> "$GITHUB_OUTPUT"
+          echo "web=${web_image}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -71,7 +89,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build and push application image
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -86,8 +104,29 @@ jobs:
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
 
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=application
+          cache-to: type=gha,mode=max,scope=application
+
+      - name: Build and push web image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+
+          tags: |
+            ${{ steps.image.outputs.web }}
+            ${{ steps.image.outputs.repository }}:production-web
+
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+
+          build-args: |
+            VITE_REALTIME_APPLICATION_ID=${{ vars.APP_REALTIME_APPLICATION_ID }}
+
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
 
   deploy:
     name: Deploy to server
@@ -118,6 +157,7 @@ jobs:
       APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
 
       IMAGE: ${{ needs.build.outputs.image }}
+      WEB_IMAGE: ${{ needs.build.outputs.web_image }}
       DEPLOY_DIRECTORY: rust-web-app
 
     steps:
@@ -173,6 +213,9 @@ jobs:
             >> "$environment_file"
           
           printf 'APP_IMAGE=%s\n' "$IMAGE" \
+            >> "$environment_file"
+
+          printf 'WEB_IMAGE=%s\n' "$WEB_IMAGE" \
             >> "$environment_file"
 
       - name: Create deployment directory
@@ -270,4 +313,4 @@ jobs:
                --env-file .env \
                ps
 
-             docker image prune --force"
+             docker image prune --all --force --filter \"until=168h\""

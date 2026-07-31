@@ -22,12 +22,36 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
 
-    ports:
-      - "127.0.0.1:4008:4008"
+    expose:
+      - "4008"
 
     depends_on:
       redis:
         condition: service_healthy
+
+    security_opt:
+      - no-new-privileges:true
+
+  web:
+    image: ${WEB_IMAGE:-rust-web-app-web:local}
+
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_REALTIME_APPLICATION_ID: ${APP_REALTIME_APPLICATION_ID:-}
+
+    restart: unless-stopped
+    init: true
+
+    ports:
+      - "127.0.0.1:4008:8080"
+
+    depends_on:
+      - app
+
+    mem_limit: 64m
+    pids_limit: 64
 
     security_opt:
       - no-new-privileges:true

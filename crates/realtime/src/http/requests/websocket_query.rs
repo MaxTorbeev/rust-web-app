@@ -9,7 +9,6 @@ pub enum WebsocketFormat {
 #[derive(Clone, Debug, Deserialize)]
 pub struct WebSocketQuery {
   pub access_token: String,
-  pub echo: bool,
   pub format: WebsocketFormat,
   pub heartbeats: bool
 }

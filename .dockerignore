@@ -5,3 +5,5 @@ target
 .env
 deploy
 compose.yml
+frontend/node_modules
+frontend/dist
