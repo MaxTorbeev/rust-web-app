@@ -1,10 +1,9 @@
 use std::sync::Arc;
-use axum::extract::{Path, Query, State};
-use axum::http::{header, HeaderMap, Response};
+use axum::extract::{Path, State};
+use axum::http::{header, HeaderMap};
 use axum::Json;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
 use api_response::{ApiError, ApiResponse};
+use support::decode_to_string;
 use crate::{ApplicationKeyName, Message, ProtocolMessage, Realtime};
 use crate::requests::broadcast_message::BroadcastMessage;
 use crate::responses::BroadcastMessageResponse;
@@ -15,7 +14,6 @@ pub async fn broadcast_message(
   State(realtime): State<Arc<Realtime>>,
   Json(payload): Json<BroadcastMessage>,
 ) -> Result<ApiResponse<BroadcastMessageResponse>, ApiError> {
-
   let authorization = headers
     .get(header::AUTHORIZATION)
     .and_then(|value| value.to_str().ok())
@@ -25,12 +23,8 @@ pub async fn broadcast_message(
     .split_once(' ')
     .ok_or_else(|| ApiError::unauthorized("Invalid Basic credentials"))?;
 
-  let decoded = STANDARD
-    .decode(encoded)
-    .map_err(|_| ApiError::unauthorized("Error"))?;
-
-  let decoded = String::from_utf8(decoded)
-    .map_err(|_| ApiError::unauthorized("Error"))?;
+  let decoded = decode_to_string(encoded)
+    .map_err(|_| ApiError::unauthorized("Invalid Basic credentials"))?;
 
   let (key_name, _key_secret) = decoded
     .split_once(':')
