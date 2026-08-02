@@ -64,6 +64,6 @@ pub async fn handle_protocol_message(
             detach(message, context).await
           )
         },
-        _ => ProtocolOutcome::no_replay(),
+        _ => ProtocolOutcome::no_reply(),
     }
 }

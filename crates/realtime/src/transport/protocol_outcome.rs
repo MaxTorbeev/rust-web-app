@@ -27,7 +27,7 @@ impl ProtocolOutcome {
     }
   }
 
-  pub fn no_replay() -> Self {
+  pub fn no_reply() -> Self {
     Self {
       replies: Vec::new(),
       disconnect: false,
