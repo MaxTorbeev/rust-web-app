@@ -5,6 +5,7 @@ use crate::{Connection, ConnectionId, PresenceAction, PresenceMessage};
 
 #[derive(Default)]
 struct PresenceHubState {
+  // Участники presence канала
   members: HashMap<String, HashMap<ConnectionId, PresenceMessage>>,
   connections: HashMap<ConnectionId, HashSet<String>>,
 }
@@ -67,12 +68,19 @@ impl PresenceHub {
     Self::leave_locked(&mut state, channel, connection_id)
   }
 
-  pub async fn members(&self, channel: &str) -> Vec<PresenceMessage> {
+  pub async fn snapshot(&self, channel: &str) -> Vec<PresenceMessage> {
     let state = self.state.read().await;
 
-    state.members.get(channel).map(|members| {
-      members.values().cloned().collect()
-    }).unwrap_or_default()
+    let Some(members) = state.members.get(channel) else {
+      return Vec::new();
+    };
+
+    members
+      .values()
+      .map(|member| PresenceMessage {
+        action: PresenceAction::Present,
+        ..member.clone()
+      }).collect()
   }
 
   pub async fn disconnect(&self, connection_id: &ConnectionId) -> Vec<(String, PresenceMessage)> {
@@ -143,7 +151,7 @@ impl PresenceHub {
     presence.id = Some(uuid::Uuid::new_v4().to_string());
     presence.client_id = connection.client_id().map(str::to_owned);
     presence.connection_id = Some(connection.id.as_str().to_string());
-    presence.timestamp = Some(Timestamp::now().to_string());
+    presence.timestamp = Some(Timestamp::now().as_millis());
 
     presence
   }
@@ -151,7 +159,7 @@ impl PresenceHub {
   fn leave_presence(mut presence: PresenceMessage) -> PresenceMessage {
     presence.action = PresenceAction::Leave;
     presence.id = Some(uuid::Uuid::new_v4().to_string());
-    presence.timestamp = Some(Timestamp::now().to_string());
+    presence.timestamp = Some(Timestamp::now().as_millis());
 
     presence
   }

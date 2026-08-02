@@ -1,5 +1,6 @@
 use std::fmt::Display;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Timestamp(u64);
 
 impl Timestamp {
@@ -10,6 +11,10 @@ impl Timestamp {
             .as_millis() as u64;
 
         Self(millis)
+    }
+
+    pub const fn as_millis(self) -> u64 {
+        self.0
     }
 }
 

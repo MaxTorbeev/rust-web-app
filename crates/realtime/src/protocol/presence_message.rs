@@ -16,7 +16,7 @@ pub struct PresenceMessage {
   pub connection_id: Option<String>,
 
   #[serde(skip_serializing_if = "Option::is_none")]
-  pub timestamp: Option<String>,
+  pub timestamp: Option<u64>,
 
   #[serde(skip_serializing_if = "Option::is_none")]
   pub data: Option<serde_json::Value>,
