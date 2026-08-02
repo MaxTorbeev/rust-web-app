@@ -1,5 +1,6 @@
 pub mod websocket;
 pub mod protocol_handlers;
+pub mod protocol_outcome;
 mod presence;
 mod auth;
 mod attach;
@@ -11,3 +12,4 @@ pub use presence::*;
 pub use attach::*;
 pub use message::*;
 pub use detach::*;
+pub use protocol_outcome::*;

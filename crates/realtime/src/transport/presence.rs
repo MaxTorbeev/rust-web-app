@@ -1,4 +1,4 @@
-use crate::{PresenceAction, PresenceMessage, ProtocolMessage};
+use crate::{PresenceAction, ProtocolMessage};
 use crate::protocol_handlers::SocketContext;
 
 pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {

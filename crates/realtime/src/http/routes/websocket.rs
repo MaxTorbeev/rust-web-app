@@ -1,14 +1,12 @@
 use crate::requests::websocket_query::WebSocketQuery;
 use crate::websocket::handle_socket;
 use api_response::ApiError;
-use auth::{SessionStore, UserIdentity};
 use axum::extract::ws::WebSocketUpgrade;
 use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, Realtime, RealtimeAccess};
-use crate::presence_hub::PresenceHub;
+use crate::{Connection, Realtime, RealtimeAccess};
 
 pub async fn websocket(
     ws: WebSocketUpgrade,

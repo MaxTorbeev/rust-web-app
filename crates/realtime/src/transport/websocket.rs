@@ -7,9 +7,9 @@ use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, ProtocolMessage, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
+use crate::{ChannelHub, Connection, ProtocolMessage, ProtocolOutcome, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
 use crate::channel::presence_hub::PresenceHub;
-use crate::protocol_handlers::{handle_protocol_message, SocketContext, ProtocolHandleResult};
+use crate::protocol_handlers::{handle_protocol_message, SocketContext};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 
@@ -83,13 +83,13 @@ pub async fn handle_socket(
           channel_hub: &application.channel_hub,
         };
 
-        let ProtocolHandleResult {
-          response,
+        let ProtocolOutcome {
+          replies,
           disconnect
         } = handle_protocol_message(message, &context).await;
 
-        if let Some(response) = response {
-          if sender.send(response).await.is_err() {
+       for reply in replies {
+          if sender.send(reply).await.is_err() {
             tracing::error!("websocket outgoing queue closed");
             break;
           }
