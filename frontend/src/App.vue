@@ -17,6 +17,7 @@ import {
 const CLIENT_ID_KEY = 'realtime-chat-client-id'
 const MAX_MESSAGES = 250
 const TYPING_TIMEOUT = 1400
+const query = new URLSearchParams(location.search)
 
 const statusLabels: Record<ConnectionState, string> = {
   initialized: 'Не подключён',
@@ -40,8 +41,9 @@ interface Member extends PresencePayload {
 }
 
 const form = reactive({
-  applicationId: import.meta.env.VITE_REALTIME_APPLICATION_ID ?? '',
-  channelName: 'private:chat.example',
+  applicationId: 'staging',
+  channelName: query.get('channel') ?? 'private:chat.example',
+  eventName: query.get('event') ?? 'chat.message',
   clientId: localStorage.getItem(CLIENT_ID_KEY) ?? `guest-${crypto.randomUUID().slice(0, 8)}`,
   displayName: '',
 })
@@ -92,6 +94,7 @@ async function connect(): Promise<void> {
 
     await chat.connect()
     localStorage.setItem(CLIENT_ID_KEY, form.clientId)
+    updateLocation()
   })
 }
 
@@ -140,7 +143,7 @@ function onConnectionChange(change: ConnectionStateChange): void {
 }
 
 function receiveMessage(message: InboundMessage): void {
-  messages.value.push(chatPayload(message.data))
+  messages.value.push(chatPayload(message))
 
   if (messages.value.length > MAX_MESSAGES) messages.value.shift()
 
@@ -210,6 +213,14 @@ function showError(reason: unknown): void {
   error.value = reason instanceof Error ? reason.message : String(reason)
 }
 
+function updateLocation(): void {
+  const params = new URLSearchParams(location.search)
+
+  params.set('channel', form.channelName)
+  params.set('event', form.eventName)
+  history.replaceState(null, '', `${location.pathname}?${params}`)
+}
+
 const formatTime = (timestamp: number): string => timeFormatter.format(timestamp)
 
 onBeforeUnmount(() => {
@@ -240,12 +251,9 @@ onBeforeUnmount(() => {
 
         <label>
           <span>Application ID</span>
-          <input
-            v-model.trim="form.applicationId"
-            autocomplete="off"
-            placeholder="staging"
-            required
-          >
+          <select v-model="form.applicationId" required>
+            <option value="staging">staging</option>
+          </select>
         </label>
 
         <label>
@@ -254,6 +262,15 @@ onBeforeUnmount(() => {
             v-model.trim="form.channelName"
             autocomplete="off"
             placeholder="private:chat.example"
+            required
+          >
+        </label>
+
+        <label>
+          <span>Событие</span>
+          <input
+            v-model.trim="form.eventName"
+            autocomplete="off"
             required
           >
         </label>

@@ -29,6 +29,7 @@ body {
 
 button,
 input,
+select,
 textarea {
   font: inherit;
 }
@@ -144,7 +145,8 @@ button {
     font-weight: 600;
   }
 
-  input {
+  input,
+  select {
     width: 100%;
     height: 46px;
     padding: 0 13px;
@@ -158,6 +160,10 @@ button {
       border-color: $accent;
       outline: 3px solid $accent-muted;
     }
+  }
+
+  select {
+    cursor: pointer;
   }
 }
 

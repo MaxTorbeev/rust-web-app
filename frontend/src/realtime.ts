@@ -6,8 +6,6 @@ import type {
   RealtimeChannel,
 } from 'ably'
 
-const MESSAGE_NAME = 'chat.message'
-
 export interface ChatPayload {
   id: string
   text: string
@@ -24,6 +22,7 @@ export interface PresencePayload {
 interface RealtimeChatOptions {
   applicationId: string
   channelName: string
+  eventName: string
   clientId: string
   displayName: string
   onConnectionChange: (change: ConnectionStateChange) => void
@@ -35,6 +34,7 @@ export class RealtimeChat {
   readonly client: Realtime
 
   private readonly channel: RealtimeChannel
+  private readonly eventName: string
   private readonly displayName: string
   private readonly onMessage: (message: InboundMessage) => void
   private readonly onPresence: (message: PresenceMessage) => void
@@ -42,6 +42,7 @@ export class RealtimeChat {
   constructor({
     applicationId,
     channelName,
+    eventName,
     clientId,
     displayName,
     onConnectionChange,
@@ -52,6 +53,7 @@ export class RealtimeChat {
       ? { endpoint: '127.0.0.1', port: 4008, tls: false }
       : { endpoint: location.hostname }
 
+    this.eventName = eventName
     this.displayName = displayName
     this.onMessage = onMessage
     this.onPresence = onPresence
@@ -78,14 +80,14 @@ export class RealtimeChat {
 
   async connect(): Promise<void> {
     await Promise.all([
-      this.channel.subscribe(MESSAGE_NAME, this.onMessage),
+      this.channel.subscribe(this.onMessage),
       this.channel.presence.subscribe(this.onPresence),
     ])
     await this.channel.presence.enter(this.presence(false))
   }
 
   publish(payload: ChatPayload) {
-    return this.channel.publish(MESSAGE_NAME, JSON.stringify(payload))
+    return this.channel.publish(this.eventName, JSON.stringify(payload))
   }
 
   setTyping(typing: boolean): Promise<void> {
@@ -104,8 +106,20 @@ export class RealtimeChat {
   }
 }
 
-export const chatPayload = (data: unknown): ChatPayload =>
-  JSON.parse(data as string) as ChatPayload
+export function chatPayload(message: InboundMessage): ChatPayload {
+  const data = message.data
+  const payload = typeof data === 'string' && data.startsWith('{')
+    ? JSON.parse(data) as ChatPayload
+    : null
+
+  return payload ?? {
+    id: message.id ?? crypto.randomUUID(),
+    text: typeof data === 'string' ? data : JSON.stringify(data ?? null),
+    senderId: message.clientId ?? '',
+    senderName: message.clientId ?? message.name ?? 'REST API',
+    sentAt: message.timestamp ?? Date.now(),
+  }
+}
 
 export const presencePayload = ({ data }: PresenceMessage): PresencePayload =>
   JSON.parse(data as string) as PresencePayload
