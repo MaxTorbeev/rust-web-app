@@ -1,10 +1,10 @@
 use std::collections::{HashMap, HashSet};
-use tokio::sync::{mpsc, RwLock};
-use crate::{ConnectionId, ProtocolMessage};
+use tokio::sync::{RwLock};
+use crate::{ConnectionId, OutboundSender, PreparedFrame, ProtocolMessage};
 
-// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
-// can enqueue ProtocolMessage values without owning the WebSocket itself.
-pub type ConnectionSender = mpsc::Sender<ProtocolMessage>;
+/// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
+/// can enqueue ProtocolMessage values without owning the WebSocket itself.
+pub type ConnectionSender = OutboundSender;
 
 #[derive(Default)]
 pub struct ChannelHubState {
@@ -14,7 +14,7 @@ pub struct ChannelHubState {
 
 
 pub struct ChannelHub {
-  // Map channel names to active WebSocket connections subscribed on this instances
+  /// Map channel names to active WebSocket connections subscribed on this instances
   state: RwLock<ChannelHubState>,
 }
 
@@ -56,21 +56,35 @@ impl ChannelHub {
     let targets = {
       let state = self.state.read().await;
 
-      state.channels.get(channel).map(|connections| {
-        connections
-          .iter()
-          .map(|(connection_id, sender)| (connection_id.clone(), sender.clone()))
-          .collect::<Vec<_>>()
-      })
+      state.channels
+        .get(channel)
+        .map(|connections| {
+          connections
+            .iter()
+            .map(|(connection_id, sender)| (connection_id.clone(), sender.clone()))
+            .collect::<Vec<_>>()
+        })
         .unwrap_or_default()
     };
 
-    let mut sent = 0;
+    if targets.is_empty() {
+      return 0;
+    }
 
+    let frame = match PreparedFrame::try_from(&message) {
+      Ok(frame) => frame,
+      Err(error) => {
+        tracing::error!(%error, %channel, "failed to prepare broadcast frame");
+
+        return 0;
+      }
+    };
+
+    let mut sent = 0;
     let mut failed_connections = Vec::new();
 
     for (connection_id, sender) in targets {
-      if sender.send(message.clone()).await.is_ok() {
+      if sender.send_prepared(frame.clone()).await.is_ok() {
         sent += 1;
       } else {
         failed_connections.push(connection_id);

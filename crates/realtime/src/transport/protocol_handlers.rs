@@ -1,22 +1,22 @@
 use crate::transport::attach::attach;
 use crate::{
-  auth,
-  detach,
-  message as message_handler,
-  presence,
   ChannelHub,
   Connection,
+  OutboundSender,
   PresenceHub,
   ProtocolAction,
   ProtocolMessage,
-  ProtocolOutcome
+  ProtocolOutcome,
+  auth,
+  detach,
+  message as message_handler,
+  presence
 };
 use std::sync::Arc;
-use tokio::sync::mpsc::{Sender};
 
 pub struct SocketContext<'a> {
     pub connection: &'a Connection,
-    pub sender: &'a Sender<ProtocolMessage>,
+    pub sender: &'a OutboundSender,
     pub channel_hub: &'a Arc<ChannelHub>,
     pub presence_hub: &'a Arc<PresenceHub>,
 }

@@ -6,6 +6,8 @@ mod auth;
 mod attach;
 mod message;
 mod detach;
+mod prepared_frame;
+mod outbound_sender;
 
 pub use auth::*;
 pub use presence::*;
@@ -13,3 +15,5 @@ pub use attach::*;
 pub use message::*;
 pub use detach::*;
 pub use protocol_outcome::*;
+pub use prepared_frame::*;
+pub use outbound_sender::*;
