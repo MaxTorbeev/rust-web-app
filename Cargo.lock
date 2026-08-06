@@ -1044,6 +1044,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "mxt-realtime"
+version = "0.0.3-alpha"
+dependencies = [
+ "auth",
+ "axum",
+ "dotenvy",
+ "event-bus",
+ "realtime",
+ "redis-client",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "nu-ansi-term"
 version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1485,21 +1500,6 @@ dependencies = [
  "spki",
  "subtle",
  "zeroize",
-]
-
-[[package]]
-name = "rust-web-app"
-version = "0.0.3-alpha"
-dependencies = [
- "auth",
- "axum",
- "dotenvy",
- "event-bus",
- "realtime",
- "redis-client",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]

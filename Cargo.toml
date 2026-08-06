@@ -1,5 +1,5 @@
 [package]
-name = "rust-web-app"
+name = "mxt-realtime"
 version = "0.0.3-alpha"
 edition = "2024"
 

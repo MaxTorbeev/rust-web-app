@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo build \
       --locked \
       --release \
-      --package rust-web-app \
+      --package mxt-realtime \
     && cp /app/target/release/rust-web-app /tmp/rust-web-app
 
 

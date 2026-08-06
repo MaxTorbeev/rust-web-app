@@ -1,8 +1,8 @@
-name: rust-web-app
+name: mxt-realtime
 
 services:
   app:
-    image: ${APP_IMAGE:-rust-web-app:local}
+    image: ${APP_IMAGE:-mxt-realtime:local}
 
     build:
       context: .
@@ -33,7 +33,7 @@ services:
       - no-new-privileges:true
 
   web:
-    image: ${WEB_IMAGE:-rust-web-app-web:local}
+    image: ${WEB_IMAGE:-mxt-realtime-web:local}
 
     build:
       context: ./frontend
