@@ -57,7 +57,7 @@ async fn run_socket_session(
       );
 
       tokio::select! {
-        protocol_result =    run_protocol_loop(
+        protocol_result = run_protocol_loop(
           websocket_receiver,
           &outbound_sender,
           &connection,
@@ -132,7 +132,7 @@ async fn run_protocol_loop(
   application: &RealtimeApplication,
 ) -> Result<(), OutboundSendError> {
   while let Some(result) = websocket_receiver.next().await {
-    let ws_message = match result {
+    let frame = match result {
       Ok(message) => message,
       Err(error) => {
         tracing::error!(%error, "websocket read failed");
@@ -141,7 +141,7 @@ async fn run_protocol_loop(
       }
     };
 
-    match ws_message {
+    match frame {
       WsMessage::Text(text) => {
         let message = match serde_json::from_str::<ProtocolMessage>(&text) {
           Ok(m) => m,
