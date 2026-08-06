@@ -1,14 +1,13 @@
 use std::sync::Arc;
 use std::time::Duration;
-use axum::extract::ws::{Message as WsMessage, Message, WebSocket};
+use axum::extract::ws::{Message as WsMessage, WebSocket};
 use futures_util::{SinkExt, StreamExt};
-use futures_util::stream::SplitSink;
+use futures_util::stream::{SplitSink, SplitStream};
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::{Receiver};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{ChannelHub, Connection, OutboundSender, PreparedFrame, ProtocolMessage, ProtocolOutcome, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
-use crate::channel::presence_hub::PresenceHub;
+use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, ProtocolOutcome, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
 use crate::protocol_handlers::{handle_protocol_message, SocketContext};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
@@ -19,45 +18,126 @@ pub async fn handle_socket(
   application: Arc<RealtimeApplication>,
   event_bus: Arc<EventBus>,
 ) {
-  event_bus.emit(WebsocketConnected {
-    connection_id: connection.id.as_str().to_string(),
-  }).await;
+  emit_connected(&event_bus, &connection).await;
+
+  let result = run_socket_session(socket, &connection, &application).await;
+
+  emit_disconnected(&event_bus, &connection).await;
+
+  if let Err(error) = result {
+    tracing::error!(?error, "error occurred while handling socket");
+  }
+}
+
+async fn run_socket_session(
+  socket: WebSocket,
+  connection: &Connection,
+  application: &RealtimeApplication,
+) -> Result<(), OutboundSendError> {
+  let (
+    outbound_sender,
+    receiver
+  ) = outbound_channel();
 
   let (
-    queue_sender,
-    mut receiver
-  ) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
+    websocket_sender,
+    websocket_receiver,
+  ) = socket.split();
 
-  let sender = OutboundSender::new(queue_sender);
+  let mut writer_task = spawn_writer(receiver, websocket_sender);
+  let mut heartbeat_task: Option<JoinHandle<()>> = None;
 
-  let (mut socket_sender, mut socket_receiver) = socket.split();
+  // Запустить очередь
+  let (
+    result,
+    writer_joined) = match send_connected(&outbound_sender, &connection).await {
+    Ok(()) => {
+      heartbeat_task = Some(
+        spawn_heartbeat(&outbound_sender)
+      );
 
-  // writer loop
-  let writer_task = tokio::spawn(async move {
-    writer_loop(&mut receiver, &mut socket_sender).await;
-  });
+      tokio::select! {
+        protocol_result =    run_protocol_loop(
+          websocket_receiver,
+          &outbound_sender,
+          &connection,
+          &application
+        ) => {
+          // Reader завершился первым.
+          // Writer ниже должен дописать очередь.
+          (protocol_result, false)
+        }
 
-  let connected = ProtocolMessage::connected(&connection);
+        writer_result = &mut writer_task => {
+          // Writer завершился первым.
+          // Отправлять сообщения в этот WebSocket больше невозможно.
+          if let Err(error) = writer_result {
+            tracing::error!(
+              %error,
+              "websocket writer task failed"
+            );
+          }
 
-  if sender.send_protocol(&connected).await.is_err() {
-    tracing::error!("websocket outgoing queue closed");
-    return;
+          (
+            Err(OutboundSendError::QueueClosed),
+            true,
+          )
+        }
+      }
+    }
+    Err(error) => {
+      // CONNECTED не удалось поставить в очередь.
+      // Cleanup всё равно должен быть выполнен.
+      (Err(error), false)
+    }
+  };
+
+  // Больше не создаём heartbeat-сообщения.
+  if let Some(heartbeat_task) = heartbeat_task {
+    heartbeat_task.abort();
+    let _ = heartbeat_task.await;
   }
 
-  let heartbeat_task = make_heartbeat_task(&sender);
 
-  // reader loop
-  while let Some(result) = socket_receiver.next().await {
-    tracing::debug!(?result, "websocket message");
+  // Удаляем sender-клоны из ChannelHub
+  // и очищаем presence.
+  cleanup_connection(connection, application).await;
 
+  // Уничтожаем последний локальный sender.
+  // После этого Receiver закроется, когда обработает очередь.
+  drop(outbound_sender);
+
+  // Если writer не завершился внутри select!,
+  // даём ему дописать оставшуюся очередь.
+  if !writer_joined {
+    if let Err(error) = writer_task.await {
+      tracing::error!(
+        %error,
+        "websocket writer task failed during shutdown"
+      );
+
+      if result.is_ok() {
+        return Err(OutboundSendError::QueueClosed);
+      }
+    }
+  }
+
+  result
+}
+
+async fn run_protocol_loop(
+  mut websocket_receiver: SplitStream<WebSocket>,
+  outbound_sender: &OutboundSender,
+  connection: &Connection,
+  application: &RealtimeApplication,
+) -> Result<(), OutboundSendError> {
+  while let Some(result) = websocket_receiver.next().await {
     let ws_message = match result {
-      Ok(msg) => msg,
-      Err(_e) => {
-        tracing::error!(%_e, "websocket read failed");
+      Ok(message) => message,
+      Err(error) => {
+        tracing::error!(%error, "websocket read failed");
 
-        // пока можно отправлять напрямую через socket_sender,
-        // но позже лучше через mpsc sender
-        break;
+        return Ok(());
       }
     };
 
@@ -70,10 +150,7 @@ pub async fn handle_socket(
 
             let response = ProtocolMessage::nack(None);
 
-            if sender.send_protocol(&response).await.is_err() {
-              tracing::error!("websocket outgoing queue closed");
-              break;
-            }
+            outbound_sender.send_protocol(&response).await?;
 
             continue
           }
@@ -81,7 +158,7 @@ pub async fn handle_socket(
 
         let context = SocketContext {
           connection: &connection,
-          sender: &sender,
+          sender: &outbound_sender,
           presence_hub: &application.presence_hub,
           channel_hub: &application.channel_hub,
         };
@@ -91,41 +168,45 @@ pub async fn handle_socket(
           disconnect
         } = handle_protocol_message(message, &context).await;
 
-       for reply in replies {
-          if sender.send_protocol(&reply).await.is_err() {
-            tracing::error!("websocket outgoing queue closed");
-            break;
-          }
+        for reply in replies {
+          outbound_sender.send_protocol(&reply).await?;
         }
-
 
         if disconnect {
-          heartbeat_task.abort();
-          break;
+          return Ok(());
         }
+      }
+      WsMessage::Close(_) => {
+        return Ok(());
       }
       _ => {}
     }
   }
 
-  // Disconnection
-  disconnect_socket(
-    &connection,
-    application.channel_hub.clone(),
-    application.presence_hub.clone()
-  ).await;
-
-  // Read loop finished
-  writer_task.abort();
-
-  heartbeat_task.abort();
-
-  event_bus.emit(WebsocketDisconnected {
-    connection_id: connection.id.as_str().to_string()
-  }).await;
+  Ok(())
 }
 
-fn make_heartbeat_task(sender: &OutboundSender) -> JoinHandle<()> {
+fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>) {
+  let (
+    queue_sender,
+    receiver
+  ) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
+
+  let sender = OutboundSender::new(queue_sender);
+
+  (sender, receiver)
+}
+
+async fn send_connected(
+  sender: &OutboundSender,
+  connection: &Connection,
+) -> Result<(), OutboundSendError> {
+  let connected = ProtocolMessage::connected(&connection);
+
+  sender.send_protocol(&connected).await
+}
+
+fn spawn_heartbeat(sender: &OutboundSender) -> JoinHandle<()> {
   tokio::spawn({
     let sender = sender.clone();
 
@@ -143,23 +224,40 @@ fn make_heartbeat_task(sender: &OutboundSender) -> JoinHandle<()> {
   })
 }
 
-async fn disconnect_socket(connection: &Connection, channel_hub: Arc<ChannelHub>, presence_hub: Arc<PresenceHub>) {
-  let leaves = presence_hub.disconnect(&connection.id).await;
+fn spawn_writer(
+  receiver: Receiver<PreparedFrame>,
+  socket_sender: SplitSink<WebSocket, WsMessage>
+) -> JoinHandle<()> {
+  tokio::spawn(writer_loop(receiver, socket_sender))
+}
 
-  channel_hub.disconnect(&connection.id).await;
-
-  for (channel, presence) in leaves {
-    channel_hub
-      .broadcast(&channel, ProtocolMessage::presence(&channel, vec![presence]))
-      .await;
+async fn writer_loop(
+  mut receiver: Receiver<PreparedFrame>,
+  mut socket_sender: SplitSink<WebSocket, WsMessage>,
+) {
+  while let Some(frame) = receiver.recv().await {
+    if let Err(error) = socket_sender
+      .send(frame.into_websocket_message())
+      .await
+    {
+      tracing::error!(%error, "websocket write failed");
+      break;
+    }
   }
 }
 
-async fn writer_loop(receiver: &mut Receiver<PreparedFrame>, socket_sender: &mut SplitSink<WebSocket, Message>) {
-  while let Some(message) = receiver.recv().await {
-    if let Err(error) = socket_sender.send(message.into_websocket_message()).await {
-      tracing::error!(%error, "websocket outgoing queue closed");
-      break
-    }
-  }
+async fn emit_connected(event_bus: &EventBus, connection: &Connection) {
+  event_bus.emit(WebsocketConnected {
+    connection_id: connection.id.as_str().to_string(),
+  }).await
+}
+
+async fn cleanup_connection(connection: &Connection, application: &RealtimeApplication) {
+  application.disconnect_connection(&connection.id).await;
+}
+
+async fn emit_disconnected(event_bus: &EventBus, connection: &Connection) {
+  event_bus.emit(WebsocketDisconnected {
+    connection_id: connection.id.as_str().to_string()
+  }).await;
 }
