@@ -13,7 +13,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       --locked \
       --release \
       --package mxt-realtime \
-    && cp /app/target/release/rust-web-app /tmp/rust-web-app
+    && cp /app/target/release/mxt-realtime /tmp/mxt-realtime
 
 
 FROM debian:bookworm-slim AS runtime
@@ -26,8 +26,8 @@ WORKDIR /app
 
 COPY --from=builder \
     --chown=10001:10001 \
-    /tmp/rust-web-app \
-    /usr/local/bin/rust-web-app
+    /tmp/mxt-realtime \
+    /usr/local/bin/mxt-realtime
 
 ENV APP_URL=0.0.0.0:4008
 ENV APP_TLS_ENABLED=false
@@ -37,4 +37,4 @@ USER 10001:10001
 
 EXPOSE 4008
 
-ENTRYPOINT ["/usr/local/bin/rust-web-app"]
+ENTRYPOINT ["/usr/local/bin/mxt-realtime"]

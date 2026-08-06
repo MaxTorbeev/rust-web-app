@@ -7,9 +7,11 @@ use crate::responses::BroadcastMessageResponse;
 pub async fn broadcast_message(
   Path(channel): Path<String>,
   BroadcastApplication(application): BroadcastApplication,
-  BroadcastMessages(payloads): BroadcastMessages,
+  payloads: BroadcastMessages,
 ) -> Result<ApiResponse<BroadcastMessageResponse>, ApiError> {
+
   let messages:Vec<Message> = payloads
+    .into_inner()
     .into_iter()
     .map(|payload| Message {
       name: payload.name,

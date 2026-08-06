@@ -158,7 +158,7 @@ jobs:
 
       IMAGE: ${{ needs.build.outputs.image }}
       WEB_IMAGE: ${{ needs.build.outputs.web_image }}
-      DEPLOY_DIRECTORY: rust-web-app
+      DEPLOY_DIRECTORY: mxt-realtime
 
     steps:
       - name: Checkout repository

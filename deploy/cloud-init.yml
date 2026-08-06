@@ -92,9 +92,9 @@ write_files:
       usermod -aG docker deploy
 
       install -d -m 0750 -o deploy -g deploy \
-        /home/deploy/rust-web-app \
-        /home/deploy/rust-web-app/deploy \
-        /home/deploy/rust-web-app/deploy/nginx
+        /home/deploy/mxt-realtime \
+        /home/deploy/mxt-realtime/deploy \
+        /home/deploy/mxt-realtime/deploy/nginx
 
       runuser -u deploy -- docker version
       runuser -u deploy -- docker compose version
