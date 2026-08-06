@@ -11,12 +11,15 @@ use crate::requests::BroadcastMessage;
 /// Декодированные сообщения одного HTTP publish-запроса.
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct BroadcastMessages {
-  #[validate(length(
-    min = 1,
-    code = "empty_batch",
-    message = "message batch must not be empty"
-  ))]
-  messages: Vec<BroadcastMessage>
+  #[validate(
+    length(
+      min = 1,
+      code = "empty_batch",
+      message = "message batch must not be empty"
+    ),
+    nested
+  )]
+  messages: Vec<BroadcastMessage>,
 }
 
 impl BroadcastMessages {
