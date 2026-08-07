@@ -22,36 +22,12 @@ services:
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
 
-    expose:
-      - "4008"
+    ports:
+      - "127.0.0.1:4008:4008"
 
     depends_on:
       redis:
         condition: service_healthy
-
-    security_opt:
-      - no-new-privileges:true
-
-  web:
-    image: ${WEB_IMAGE:-mxt-realtime-web:local}
-
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_REALTIME_APPLICATION_ID: ${APP_REALTIME_APPLICATION_ID:-}
-
-    restart: unless-stopped
-    init: true
-
-    ports:
-      - "127.0.0.1:4008:8080"
-
-    depends_on:
-      - app
-
-    mem_limit: 64m
-    pids_limit: 64
 
     security_opt:
       - no-new-privileges:true
@@ -84,6 +60,58 @@ services:
 
     security_opt:
       - no-new-privileges:true
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.157.0
+    restart: unless-stopped
+    init: true
+
+    command:
+      - --config=/etc/otelcol/config.yaml
+
+    configs:
+      - source: otel-collector-config
+        target: /etc/otelcol/config.yaml
+
+    expose:
+      - "4317"
+      - "4318"
+
+    security_opt:
+      - no-new-privileges:true
+
+configs:
+  otel-collector-config:
+    content: |
+      receivers:
+        otlp:
+          protocols:
+            grpc:
+              endpoint: 0.0.0.0:4317
+            http:
+              endpoint: 0.0.0.0:4318
+
+      processors:
+        batch:
+
+      exporters:
+        debug:
+          verbosity: basic
+
+      service:
+        pipelines:
+          traces:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [debug]
+          metrics:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [debug]
+          logs:
+            receivers: [otlp]
+            processors: [batch]
+            exporters: [debug]
 
 volumes:
   redis-data:

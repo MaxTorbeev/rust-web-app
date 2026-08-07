@@ -22,7 +22,7 @@ $danger: #dc2626;
 
 body {
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100dvh;
   margin: 0;
   background: $background;
 }
@@ -60,19 +60,22 @@ button {
 
 .page-shell {
   display: grid;
-  min-height: 100vh;
+  min-height: 100dvh;
   padding: 24px;
   place-items: center;
 }
 
 .chat-card {
   position: relative;
+  display: flex;
   width: min(1120px, 100%);
-  min-height: min(760px, calc(100vh - 48px));
+  min-height: min(760px, calc(100dvh - 48px));
+  max-height: calc(100dvh - 48px);
   overflow: hidden;
   border: 1px solid $border;
   border-radius: 16px;
   background: $surface;
+  flex-direction: column;
 }
 
 .topbar {
@@ -189,7 +192,8 @@ button {
 
 .workspace {
   display: grid;
-  min-height: calc(min(760px, 100vh - 48px) - 80px);
+  min-height: 0;
+  flex: 1;
   grid-template-columns: 240px 1fr;
 }
 
@@ -197,6 +201,7 @@ button {
   display: flex;
   flex-direction: column;
   min-width: 0;
+  min-height: 0;
   padding: 22px 16px 16px;
   border-right: 1px solid $border;
   background: $surface-muted;
@@ -220,8 +225,11 @@ button {
 
 .member-list {
   display: grid;
+  min-height: 0;
   margin: 0;
   padding: 0;
+  overflow-y: auto;
+  flex: 1;
   gap: 5px;
   list-style: none;
 
@@ -439,7 +447,8 @@ button {
   }
 
   .chat-card {
-    min-height: 100vh;
+    min-height: 100dvh;
+    max-height: 100dvh;
     border: 0;
     border-radius: 0;
   }
@@ -465,11 +474,6 @@ button {
   .form-row,
   .workspace {
     grid-template-columns: 1fr;
-  }
-
-  .workspace,
-  .messages-panel {
-    min-height: calc(100vh - 72px);
   }
 
   .members-panel {

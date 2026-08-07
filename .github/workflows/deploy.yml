@@ -39,6 +39,14 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          if-no-files-found: error
+          retention-days: 1
+
       - name: Install Rust
         run: |
           rustup toolchain install 1.94.1 --profile minimal
@@ -61,7 +69,6 @@ jobs:
 
     outputs:
       image: ${{ steps.image.outputs.value }}
-      web_image: ${{ steps.image.outputs.web }}
 
     steps:
       - name: Checkout repository
@@ -73,11 +80,9 @@ jobs:
         run: |
           repository="ghcr.io/${GITHUB_REPOSITORY,,}"
           image="${repository}:${GITHUB_SHA}"
-          web_image="${repository}:web-${GITHUB_SHA}"
 
           echo "repository=${repository}" >> "$GITHUB_OUTPUT"
           echo "value=${image}" >> "$GITHUB_OUTPUT"
-          echo "web=${web_image}" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -106,27 +111,6 @@ jobs:
 
           cache-from: type=gha,scope=application
           cache-to: type=gha,mode=max,scope=application
-
-      - name: Build and push web image
-        uses: docker/build-push-action@v6
-        with:
-          context: ./frontend
-          file: ./frontend/Dockerfile
-          push: true
-
-          tags: |
-            ${{ steps.image.outputs.web }}
-            ${{ steps.image.outputs.repository }}:production-web
-
-          labels: |
-            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-            org.opencontainers.image.revision=${{ github.sha }}
-
-          build-args: |
-            VITE_REALTIME_APPLICATION_ID=${{ vars.APP_REALTIME_APPLICATION_ID }}
-
-          cache-from: type=gha,scope=web
-          cache-to: type=gha,mode=max,scope=web
 
   deploy:
     name: Deploy to server
@@ -157,7 +141,6 @@ jobs:
       APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
 
       IMAGE: ${{ needs.build.outputs.image }}
-      WEB_IMAGE: ${{ needs.build.outputs.web_image }}
       DEPLOY_DIRECTORY: mxt-realtime
 
     steps:
@@ -215,8 +198,21 @@ jobs:
           printf 'APP_IMAGE=%s\n' "$IMAGE" \
             >> "$environment_file"
 
-          printf 'WEB_IMAGE=%s\n' "$WEB_IMAGE" \
-            >> "$environment_file"
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: ${{ runner.temp }}/frontend-dist
+
+      - name: Package frontend artifact
+        shell: bash
+        run: |
+          tar \
+            --create \
+            --gzip \
+            --file "$RUNNER_TEMP/frontend-dist.tar.gz" \
+            --directory "$RUNNER_TEMP/frontend-dist" \
+            .
 
       - name: Create deployment directory
         shell: bash
@@ -247,6 +243,14 @@ jobs:
             -o StrictHostKeyChecking=yes \
             deploy/nginx/default.conf.template \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIRECTORY/deploy/nginx/default.conf.template"
+
+          scp \
+            -i "$HOME/.ssh/deploy_key" \
+            -P "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            "$RUNNER_TEMP/frontend-dist.tar.gz" \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIRECTORY/frontend-dist.tar.gz"
 
           scp \
             -i "$HOME/.ssh/deploy_key" \
@@ -292,6 +296,16 @@ jobs:
             "set -eu
              cd '$DEPLOY_DIRECTORY'
 
+             frontend_release='frontend/releases/$GITHUB_SHA'
+
+             mkdir -p \"\$frontend_release/chat\"
+             chmod 0755 . frontend frontend/releases \"\$frontend_release\" \"\$frontend_release/chat\"
+             tar \
+               --extract \
+               --gzip \
+               --file frontend-dist.tar.gz \
+               --directory \"\$frontend_release/chat\"
+
              docker compose \
                --env-file .env \
                config --quiet
@@ -312,5 +326,9 @@ jobs:
              docker compose \
                --env-file .env \
                ps
+
+             ln -sfn 'releases/$GITHUB_SHA' frontend/current.next
+             mv -Tf frontend/current.next frontend/current
+             rm -f frontend-dist.tar.gz
 
              docker image prune --all --force --filter \"until=168h\""
