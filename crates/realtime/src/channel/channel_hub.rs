@@ -1,6 +1,6 @@
 use std::collections::{HashMap, HashSet};
 use tokio::sync::{RwLock};
-use crate::{ConnectionId, OutboundSender, PreparedFrame, ProtocolMessage};
+use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage};
 
 /// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
 /// can enqueue ProtocolMessage values without owning the WebSocket itself.
@@ -81,18 +81,37 @@ impl ChannelHub {
     };
 
     let mut sent = 0;
-    let mut failed_connections = Vec::new();
+    let mut connections_to_disconnect = Vec::new();
 
     for (connection_id, sender) in targets {
-      if sender.send_prepared(frame.clone()).await.is_ok() {
-        sent += 1;
-      } else {
-        failed_connections.push(connection_id);
+      match sender.try_enqueue_prepared_frame(frame.clone()) {
+        Ok(()) => {
+          sent += 1;
+        }
+
+        Err(OutboundSendError::QueueFull) => {
+          tracing::warn!(
+            connection_id = connection_id.as_str(),
+            %channel,
+            "disconnecting slow consumer"
+          );
+          sender.request_shutdown();
+          connections_to_disconnect.push(connection_id);
+        }
+
+        Err(OutboundSendError::QueueClosed) => {
+          sender.request_shutdown();
+          connections_to_disconnect.push(connection_id);
+        }
+
+        Err(OutboundSendError::Serialization(_)) => {
+          unreachable!("prepared frame is already serialized");
+        }
       }
     }
 
-    for connection_id in failed_connections {
-      self.detach(channel, &connection_id).await;
+    for connection_id in connections_to_disconnect {
+      self.disconnect(&connection_id).await;
     }
 
     sent

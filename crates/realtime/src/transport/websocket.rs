@@ -3,14 +3,29 @@ use std::time::Duration;
 use axum::extract::ws::{Message as WsMessage, WebSocket};
 use futures_util::{SinkExt, StreamExt};
 use futures_util::stream::{SplitSink, SplitStream};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::sync::mpsc::{Receiver};
 use tokio::task::JoinHandle;
 use event_bus::EventBus;
-use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, ProtocolOutcome, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
+use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, ProtocolOutcome, RealtimeApplication, SessionEndReason, WebsocketConnected, WebsocketDisconnected};
 use crate::protocol_handlers::{handle_protocol_message, SocketContext};
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriterAction {
+  /// Штатно завершить writer после отправки всех уже поставленных в очередь кадров.
+  Drain,
+  /// Немедленно остановить writer, не ожидая отправки оставшихся кадров.
+  Abort,
+  /// Writer уже завершился и не требует дополнительных действий.
+  AlreadyFinished,
+}
+
+struct SessionOutcome {
+  result: Result<(), OutboundSendError>,
+  writer_action: WriterAction,
+}
 
 pub async fn handle_socket(
   socket: WebSocket,
@@ -36,7 +51,8 @@ async fn run_socket_session(
 ) -> Result<(), OutboundSendError> {
   let (
     outbound_sender,
-    receiver
+    receiver,
+    mut shutdown_receiver
   ) = outbound_channel();
 
   let (
@@ -47,48 +63,62 @@ async fn run_socket_session(
   let mut writer_task = spawn_writer(receiver, websocket_sender);
   let mut heartbeat_task: Option<JoinHandle<()>> = None;
 
-  // Запустить очередь
-  let (
-    result,
-    writer_joined) = match send_connected(&outbound_sender, &connection).await {
+  let outcome = match send_connected(&outbound_sender, connection) {
     Ok(()) => {
       heartbeat_task = Some(
         spawn_heartbeat(&outbound_sender)
       );
 
-      tokio::select! {
-        protocol_result = run_protocol_loop(
-          websocket_receiver,
-          &outbound_sender,
-          &connection,
-          &application
-        ) => {
-          // Reader завершился первым.
-          // Writer ниже должен дописать очередь.
-          (protocol_result, false)
+      let session_end_reason = wait_for_session_end(
+        connection,
+        application,
+        &outbound_sender,
+        &mut shutdown_receiver,
+        websocket_receiver,
+        &mut writer_task,
+      );
+
+      match session_end_reason.await {
+        SessionEndReason::ProtocolLoopFinished(result) => {
+          let writer_action = if result.is_ok() {
+            WriterAction::Drain
+          } else {
+            WriterAction::Abort
+          };
+
+          SessionOutcome {
+            result,
+            writer_action,
+          }
         }
 
-        writer_result = &mut writer_task => {
-          // Writer завершился первым.
-          // Отправлять сообщения в этот WebSocket больше невозможно.
+        SessionEndReason::ShutdownRequested => {
+          tracing::debug!(connection_id = connection.id.as_str(), "websocket shutdown requested");
+
+          SessionOutcome {
+            result: Ok(()),
+            writer_action: WriterAction::Abort,
+          }
+        }
+
+        SessionEndReason::WriterFinished(writer_result) => {
           if let Err(error) = writer_result {
-            tracing::error!(
-              %error,
-              "websocket writer task failed"
-            );
+            tracing::error!(%error, "websocket writer task failed");
           }
 
-          (
-            Err(OutboundSendError::QueueClosed),
-            true,
-          )
+          SessionOutcome {
+            result: Err(OutboundSendError::QueueClosed),
+            writer_action: WriterAction::AlreadyFinished,
+          }
         }
       }
     }
+
     Err(error) => {
-      // CONNECTED не удалось поставить в очередь.
-      // Cleanup всё равно должен быть выполнен.
-      (Err(error), false)
+      SessionOutcome {
+        result: Err(error),
+        writer_action: WriterAction::Abort,
+      }
     }
   };
 
@@ -98,31 +128,80 @@ async fn run_socket_session(
     let _ = heartbeat_task.await;
   }
 
+  let mut writer_was_aborted = matches!(outcome.writer_action, WriterAction::Abort);
 
-  // Удаляем sender-клоны из ChannelHub
-  // и очищаем presence.
+  // Медленный клиент не должен дренировать зависший writer.
+  if writer_was_aborted {
+    writer_task.abort();
+  }
+
+  // Удаляем соединение из всех channels и presence.
   cleanup_connection(connection, application).await;
 
-  // Уничтожаем последний локальный sender.
-  // После этого Receiver закроется, когда обработает очередь.
+  // Удаляем последний локальный Sender.
+  // При Drain writer обработает остаток очереди и завершится.
   drop(outbound_sender);
 
   // Если writer не завершился внутри select!,
   // даём ему дописать оставшуюся очередь.
-  if !writer_joined {
-    if let Err(error) = writer_task.await {
-      tracing::error!(
-        %error,
-        "websocket writer task failed during shutdown"
-      );
+  if !matches!(  outcome.writer_action,  WriterAction::AlreadyFinished) {
+    let writer_result =
+      if matches!(outcome.writer_action, WriterAction::Drain) {
+        tokio::select! {
+          writer_result = &mut writer_task => writer_result,
+          // Пока writer дописывал очередь,
+          // другой sender мог обнаружить её переполнение.
+          Ok(_) = shutdown_receiver.wait_for(|should_shutdown| *should_shutdown ) => {
+            writer_was_aborted = true;
+            writer_task.abort();
+            writer_task.await
+          }
+        }
+      } else {
+        writer_task.await
+      };
 
-      if result.is_ok() {
-        return Err(OutboundSendError::QueueClosed);
+    if let Err(error) = writer_result {
+      let expected_abort = writer_was_aborted && error.is_cancelled();
+
+      if !expected_abort {
+        tracing::error!(%error, "websocket writer task failed during shutdown");
+
+        if outcome.result.is_ok() {
+          return Err(OutboundSendError::QueueClosed);
+        }
       }
     }
   }
 
-  result
+  outcome.result
+}
+
+/// Запустить сессию и ожидать ее конца
+async fn wait_for_session_end(
+  connection: &Connection,
+  application: &RealtimeApplication,
+  outbound_sender: &OutboundSender,
+  shutdown_receiver: &mut watch::Receiver<bool>,
+  websocket_receiver: SplitStream<WebSocket>,
+  writer_task: &mut JoinHandle<()>,
+) -> SessionEndReason {
+  tokio::select! {
+    // При нормальном Disconnect очередь можно дописать.
+    // При ошибке writer нужно остановить принудительно.
+    protocol_result = run_protocol_loop(
+      websocket_receiver,
+      outbound_sender,
+      connection,
+      application
+    ) => SessionEndReason::ProtocolLoopFinished(protocol_result),
+
+    _ = shutdown_receiver.wait_for(|should_shutdown| *should_shutdown) => {
+       SessionEndReason::ShutdownRequested
+    }
+
+    writer_result = writer_task => SessionEndReason::WriterFinished(writer_result)
+  }
 }
 
 async fn run_protocol_loop(
@@ -150,7 +229,7 @@ async fn run_protocol_loop(
 
             let response = ProtocolMessage::nack(None);
 
-            outbound_sender.send_protocol(&response).await?;
+            outbound_sender.try_enqueue_protocol_message(&response)?;
 
             continue
           }
@@ -169,7 +248,7 @@ async fn run_protocol_loop(
         } = handle_protocol_message(message, &context).await;
 
         for reply in replies {
-          outbound_sender.send_protocol(&reply).await?;
+          outbound_sender.try_enqueue_protocol_message(&reply)?;
         }
 
         if disconnect {
@@ -186,24 +265,30 @@ async fn run_protocol_loop(
   Ok(())
 }
 
-fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>) {
+fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>, watch::Receiver<bool>) {
   let (
     queue_sender,
-    receiver
+    queue_receiver
   ) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
 
-  let sender = OutboundSender::new(queue_sender);
+  let (shutdown_sender, shutdown_receiver) = watch::channel(false);
 
-  (sender, receiver)
+  let sender = OutboundSender::new(queue_sender, shutdown_sender);
+
+  (
+    sender,
+    queue_receiver,
+    shutdown_receiver,
+  )
 }
 
-async fn send_connected(
+fn send_connected(
   sender: &OutboundSender,
   connection: &Connection,
 ) -> Result<(), OutboundSendError> {
   let connected = ProtocolMessage::connected(&connection);
 
-  sender.send_protocol(&connected).await
+  sender.try_enqueue_protocol_message(&connected)
 }
 
 fn spawn_heartbeat(sender: &OutboundSender) -> JoinHandle<()> {
@@ -216,7 +301,9 @@ fn spawn_heartbeat(sender: &OutboundSender) -> JoinHandle<()> {
 
         let heartbeat = ProtocolMessage::heartbeat();
 
-        if sender.send_protocol(&heartbeat).await.is_err() {
+        if sender.try_enqueue_protocol_message(&heartbeat).is_err() {
+          sender.request_shutdown();
+
           break;
         }
       }

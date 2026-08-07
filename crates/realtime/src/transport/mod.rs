@@ -8,6 +8,7 @@ mod message;
 mod detach;
 mod prepared_frame;
 mod outbound_sender;
+mod session_end_reason;
 
 pub use auth::*;
 pub use presence::*;
@@ -17,3 +18,4 @@ pub use detach::*;
 pub use protocol_outcome::*;
 pub use prepared_frame::*;
 pub use outbound_sender::*;
+pub use session_end_reason::*;

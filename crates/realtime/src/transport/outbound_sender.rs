@@ -1,4 +1,4 @@
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 
 use crate::{PreparedFrame, ProtocolMessage};
 
@@ -9,6 +9,10 @@ use crate::{PreparedFrame, ProtocolMessage};
 #[derive(Clone)]
 pub struct OutboundSender {
   inner: mpsc::Sender<PreparedFrame>,
+
+  /// Передаёт WebSocket-сессии сигнал о необходимости
+  /// принудительно завершить соединение.
+  shutdown_signal: watch::Sender<bool>
 }
 
 #[derive(Debug)]
@@ -20,19 +24,29 @@ pub enum OutboundSendError {
 
 
 impl OutboundSender {
-  pub fn new(inner: mpsc::Sender<PreparedFrame>) -> Self {
-    Self { inner }
+  pub fn new(
+    inner: mpsc::Sender<PreparedFrame>,
+    shutdown_signal: watch::Sender<bool>
+  ) -> Self {
+    Self {
+      inner,
+      shutdown_signal
+    }
   }
 
   /// Сериализовать обычный единичный ответ и поставить в очередь;
-  pub async fn send_protocol(&self, message: &ProtocolMessage) -> Result<(), OutboundSendError> {
+  pub fn try_enqueue_protocol_message(&self, message: &ProtocolMessage) -> Result<(), OutboundSendError> {
     let frame = PreparedFrame::try_from(message)
       .map_err(OutboundSendError::Serialization)?;
 
-    self.send_prepared(frame).await
+    self.try_enqueue_prepared_frame(frame)
   }
 
-  pub async fn send_prepared(&self, frame: PreparedFrame) -> Result<(), OutboundSendError> {
+  pub fn request_shutdown(&self) {
+    self.shutdown_signal.send_replace(true);
+  }
+
+  pub fn try_enqueue_prepared_frame(&self, frame: PreparedFrame) -> Result<(), OutboundSendError> {
     match self.inner.try_send(frame) {
       Ok(()) => Ok(()),
 
