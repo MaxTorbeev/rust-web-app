@@ -14,7 +14,8 @@ pub struct OutboundSender {
 #[derive(Debug)]
 pub enum OutboundSendError {
   Serialization(serde_json::Error),
-  QueueClosed
+  QueueClosed,
+  QueueFull
 }
 
 
@@ -32,6 +33,16 @@ impl OutboundSender {
   }
 
   pub async fn send_prepared(&self, frame: PreparedFrame) -> Result<(), OutboundSendError> {
-    self.inner.send(frame).await.map_err(|_| OutboundSendError::QueueClosed)
+    match self.inner.try_send(frame) {
+      Ok(()) => Ok(()),
+
+      Err(mpsc::error::TrySendError::Full(_)) => {
+        Err(OutboundSendError::QueueFull)
+      }
+
+      Err(mpsc::error::TrySendError::Closed(_)) => {
+        Err(OutboundSendError::QueueClosed)
+      }
+    }
   }
 }
