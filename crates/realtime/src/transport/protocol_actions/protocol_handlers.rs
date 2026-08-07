@@ -1,9 +1,4 @@
-use crate::transport::attach::attach;
 use crate::{
-  ChannelHub,
-  Connection,
-  OutboundSender,
-  PresenceHub,
   ProtocolAction,
   ProtocolMessage,
   ProtocolOutcome,
@@ -12,14 +7,7 @@ use crate::{
   message as message_handler,
   presence
 };
-use std::sync::Arc;
-
-pub struct SocketContext<'a> {
-    pub connection: &'a Connection,
-    pub sender: &'a OutboundSender,
-    pub channel_hub: &'a Arc<ChannelHub>,
-    pub presence_hub: &'a Arc<PresenceHub>,
-}
+use crate::transport::{attach, SocketContext};
 
 pub async fn handle_protocol_message(
     message: ProtocolMessage,

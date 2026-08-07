@@ -1,8 +1,5 @@
-use crate::app::config::TlsConfig;
-
 pub struct HttpConfig {
     pub url: String,
-    pub tls: Option<TlsConfig>
 }
 
 impl HttpConfig {
@@ -16,15 +13,7 @@ impl HttpConfig {
             "0.0.0.0:4008".to_string()
         }).to_string();
 
-        let tls = if tls_enabled {
-            Some(TlsConfig {
-                cert_path: std::env::var("APP_TLS_CERT")?,
-                key_path: std::env::var("APP_TLS_KEY")?,
-            })
-        } else {
-            None
-        };
 
-        Ok(Self {url, tls})
+        Ok(Self {url})
     }
 }

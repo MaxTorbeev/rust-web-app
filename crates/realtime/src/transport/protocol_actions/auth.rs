@@ -1,5 +1,5 @@
-use crate::protocol_handlers::SocketContext;
 use crate::ProtocolMessage;
+use crate::transport::SocketContext;
 
 pub async fn auth(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
   match message.auth.as_ref() {

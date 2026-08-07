@@ -1,21 +1,11 @@
 pub mod websocket;
-pub mod protocol_handlers;
-pub mod protocol_outcome;
-mod presence;
-mod auth;
-mod attach;
-mod message;
-mod detach;
 mod prepared_frame;
 mod outbound_sender;
-mod session_end_reason;
+mod protocol_actions;
+mod session;
 
-pub use auth::*;
-pub use presence::*;
-pub use attach::*;
-pub use message::*;
-pub use detach::*;
-pub use protocol_outcome::*;
+// pub use auth::*;
 pub use prepared_frame::*;
 pub use outbound_sender::*;
-pub use session_end_reason::*;
+pub(crate) use protocol_actions::*;
+pub(crate) use session::*;

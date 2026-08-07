@@ -1,5 +1,5 @@
 use crate::{PresenceAction, ProtocolMessage};
-use crate::protocol_handlers::SocketContext;
+use crate::transport::SocketContext;
 
 pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
   match message.channel.as_deref() {

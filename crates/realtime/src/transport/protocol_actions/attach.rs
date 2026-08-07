@@ -1,5 +1,5 @@
-use crate::protocol_handlers::SocketContext;
 use crate::{ProtocolFlag, ProtocolMessage};
+use crate::transport::SocketContext;
 
 pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Vec<ProtocolMessage> {
   let Some(channel) = message.channel.as_deref() else {
