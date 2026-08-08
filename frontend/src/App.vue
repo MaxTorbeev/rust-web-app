@@ -74,7 +74,10 @@ const typingLabel = computed(() => {
   if (names.length === 0) return ''
   if (names.length === 1) return `${names[0]} печатает…`
 
-  return `Печатают: ${names.join(', ')}`
+  const visibleNames = names.slice(0, 2)
+  const hiddenCount = names.length - visibleNames.length
+
+  return `Печатают: ${visibleNames.join(', ')}${hiddenCount > 0 ? ` и ещё ${hiddenCount}` : ''}`
 })
 
 async function connect(): Promise<void> {

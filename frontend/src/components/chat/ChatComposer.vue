@@ -23,14 +23,14 @@ function submit(): void {
 
 <template>
   <div
-    class="h-6 truncate px-1 pt-1 text-xs text-muted-foreground"
+    class="h-6 w-full min-w-0 truncate px-1 pt-1 text-xs text-muted-foreground"
     role="status"
     aria-live="polite"
     :title="typingLabel"
   >
     {{ typingLabel }}
   </div>
-  <form class="flex items-end gap-2" @submit.prevent="submit">
+  <form class="flex min-w-0 items-end gap-2" @submit.prevent="submit">
     <Textarea
       v-model="draft"
       class="max-h-32 min-h-11 resize-none rounded-xl py-3"

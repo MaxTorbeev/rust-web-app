@@ -22,7 +22,7 @@ defineSlots<{
         <slot />
       </div>
 
-      <footer class="border-t bg-card px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:px-5 sm:pb-5">
+      <footer class="min-w-0 overflow-hidden border-t bg-card px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-1 sm:px-5 sm:pb-5">
         <slot name="composer" />
       </footer>
     </section>

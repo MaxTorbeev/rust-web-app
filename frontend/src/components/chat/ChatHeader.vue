@@ -20,10 +20,7 @@ const emit = defineEmits<{
     <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
       <MessageCircleIcon class="size-5" aria-hidden="true" />
     </span>
-    <div class="min-w-0">
-      <p class="text-[0.6875rem] font-bold tracking-widest text-primary uppercase">Native AblyJS</p>
-      <h1 class="truncate text-lg font-semibold tracking-tight">Realtime Chat</h1>
-    </div>
+    <h1 class="truncate text-lg font-semibold tracking-tight">Realtime Chat</h1>
   </div>
 
   <div class="flex items-center gap-2">
