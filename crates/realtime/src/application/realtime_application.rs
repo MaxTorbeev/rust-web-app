@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use auth::{TokenAccessIssuer, TokenAccessVerifier};
-use crate::{ApplicationId, ChannelHub, ConnectionId, PresenceHub, ProtocolMessage};
+use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
+use crate::{ApplicationId, ApplicationSettings, ChannelHub, Connection, ConnectionId, PresenceHub, ProtocolMessage};
 
 pub struct RealtimeApplication {
   pub id: ApplicationId,
@@ -8,6 +8,7 @@ pub struct RealtimeApplication {
   pub token_verifier: TokenAccessVerifier,
   pub channel_hub: Arc<ChannelHub>,
   pub presence_hub: Arc<PresenceHub>,
+  pub settings: ApplicationSettings,
 }
 
 impl RealtimeApplication {
@@ -20,9 +21,14 @@ impl RealtimeApplication {
       id,
       token_issuer,
       token_verifier,
+      settings: ApplicationSettings::default(),
       channel_hub: Arc::new(ChannelHub::new()),
       presence_hub: Arc::new(PresenceHub::new()),
     }
+  }
+
+  pub fn create_connection(&self, authorization: VerifiedToken) -> Connection {
+    Connection::new(self, authorization)
   }
 
   /// Removes one connection from channel and presence state

@@ -75,7 +75,7 @@ impl ProtocolMessage {
   pub fn connected(connection: &Connection) -> Self {
     Self {
       connection_id: Some(connection.id.as_str().to_string()),
-      connection_details: Some(ConnectionDetails::new(connection)),
+      connection_details: Some(ConnectionDetails::from(connection)),
       ..Self::with_action(ProtocolAction::Connected)
     }
   }

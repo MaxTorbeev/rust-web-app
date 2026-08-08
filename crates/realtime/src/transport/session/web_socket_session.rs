@@ -54,7 +54,7 @@ impl WebSocketSession {
   pub async fn run(mut self) -> Result<(), OutboundSendError> {
     let end_reason = match self.send_connected() {
       Ok(()) => {
-        self.heartbeat = Some(Heartbeat::spawn(&self.sender));
+        self.heartbeat = Some(Heartbeat::spawn(&self.sender, &self.application));
 
         self.wait_for_end().await
       },

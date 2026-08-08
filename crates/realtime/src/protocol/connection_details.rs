@@ -15,17 +15,19 @@ pub struct ConnectionDetails {
   pub max_idle_interval: u64,
 }
 
-impl ConnectionDetails {
-  pub fn new(connection: &Connection) -> Self {
+impl From<&Connection> for ConnectionDetails {
+  fn from(connection: &Connection) -> Self {
+    let settings = connection.settings();
+
     Self {
-      client_id: connection.client_id().map(str::to_owned),
-      connection_key: uuid::Uuid::new_v4().to_string(),
-      max_message_size: 262144,
-      max_inbound_rate: 50,
-      max_outbound_rate: 50,
-      max_frame_size: 1468006,
-      connection_state_ttl: 120000,
-      max_idle_interval: 15000,
+      client_id: connection.client_id().map(|s| s.to_string()),
+      connection_key: connection.connection_key().to_owned(),
+      max_message_size: settings.max_message_size,
+      max_inbound_rate: settings.max_inbound_rate,
+      max_outbound_rate: settings.max_outbound_rate,
+      max_frame_size: settings.max_frame_size,
+      connection_state_ttl: settings.connection_state_ttl,
+      max_idle_interval: settings.max_idle_interval,
     }
   }
 }

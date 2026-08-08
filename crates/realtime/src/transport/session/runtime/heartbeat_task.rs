@@ -1,6 +1,6 @@
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use crate::{OutboundSender, ProtocolMessage};
+use crate::{OutboundSender, ProtocolMessage, RealtimeApplication};
 
 pub struct Heartbeat {
   task: JoinHandle<()>,
@@ -9,13 +9,17 @@ pub struct Heartbeat {
 impl Heartbeat {
 
   /// Spawn new heartbeat event loop task
-  pub fn spawn(sender: &OutboundSender) -> Self {
+  pub fn spawn(sender: &OutboundSender, app: &RealtimeApplication) -> Self {
+    let interval = Duration::from_millis(
+      app.settings.max_idle_interval
+    );
+
     let task = tokio::spawn({
       let sender = sender.clone();
 
       async move {
         loop {
-          tokio::time::sleep(Duration::from_millis(10_000)).await;
+          tokio::time::sleep(interval).await;
 
           let heartbeat = ProtocolMessage::heartbeat();
 
