@@ -234,7 +234,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <ChatLayout>
+  <ChatLayout :show-header="connected">
     <template #header>
       <ChatHeader
         :status="status"

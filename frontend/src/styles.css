@@ -72,6 +72,12 @@
   }
 }
 
+.auth-visual {
+  background-color: var(--muted);
+  background-image: radial-gradient(var(--border) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
 [data-state="connected"] .status-dot {
   background: var(--online);
 }

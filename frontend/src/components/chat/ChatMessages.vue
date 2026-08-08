@@ -30,10 +30,11 @@ watch(() => props.messages.at(-1)?.id, async () => {
   if (!stickToBottom && lastMessage?.senderId !== props.clientId) return
 
   await nextTick()
-  messageList.value?.scrollTo({
-    top: messageList.value.scrollHeight,
-    behavior: 'smooth',
-  })
+  const list = messageList.value
+  if (list === undefined) return
+
+  stickToBottom = true
+  list.scrollTop = list.scrollHeight
 })
 </script>
 
