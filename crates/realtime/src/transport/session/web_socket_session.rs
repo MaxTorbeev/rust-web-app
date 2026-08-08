@@ -4,7 +4,7 @@ use futures_util::StreamExt;
 use tokio::sync::{mpsc};
 use tokio::sync::mpsc::Receiver;
 use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, RealtimeApplication};
-use crate::transport::{shutdown_channel, EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy};
+use crate::transport::{shutdown_channel, EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy, SessionError};
 use crate::transport::protocol_reader::ProtocolReader;
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
@@ -51,7 +51,7 @@ impl WebSocketSession {
   }
 
   /// Start websocket session
-  pub async fn run(mut self) -> Result<(), OutboundSendError> {
+  pub async fn run(mut self) -> Result<(), SessionError> {
     let end_reason = match self.send_connected() {
       Ok(()) => {
         self.heartbeat = Some(Heartbeat::spawn(&self.sender, &self.application));
@@ -65,7 +65,7 @@ impl WebSocketSession {
   }
 
   /// Finish web socket session
-  pub async fn finish(mut self, reason: EndReason) -> Result<(), OutboundSendError> {
+  pub async fn finish(mut self, reason: EndReason) -> Result<(), SessionError> {
     let writer_policy = reason.writer_policy();
 
     // Finish heartbeat task
@@ -84,17 +84,25 @@ impl WebSocketSession {
     // Очистить структуру отправителя
     drop(self.sender);
 
-    let writer_result = self.writer
+    let writer_result = self
+      .writer
       .finish(writer_policy, &mut self.shutdown_listener)
       .await;
 
     // Проверить на ошибки, что бы не упустить ошибку writer
     match reason.into_result() {
-      Err(session_error) => Err(session_error),
-      Ok(()) => writer_result,
+      Ok(_) => writer_result,
+      Err(session_error) => {
+        // Если writer уже завершился с собственной ошибкой,
+        // логируем её, но возвращаем первичную ошибку session.
+        if let Err(e) = writer_result {
+          tracing::error!(?e, "writer also failed while websocket session was stopping");
+        }
+
+        Err(session_error)
+      }
     }
   }
-
 
   fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>, ShutdownListener) {
     let (shutdown_trigger, shutdown_listener) = shutdown_channel();
@@ -125,14 +133,11 @@ impl WebSocketSession {
     tokio::select! {
       // При нормальном Disconnect очередь можно дописать.
       // При ошибке writer нужно остановить принудительно.
-      protocol_result = self.reader.run(&self.sender, &self.connection, self.application.as_ref()) => {
-        match protocol_result {
-          Ok(()) => EndReason::Graceful,
-          Err(error) => {
-            EndReason::ProtocolFailed(error)
-          }
-        }
-      }
+      reader_result = self.reader.run(
+        &self.sender,
+        &self.connection,
+        self.application.as_ref()
+      ) => reader_result.into(),
 
       true = self.shutdown_listener.requested() => {
         EndReason::ShutdownRequested

@@ -47,3 +47,44 @@ impl Heartbeat {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use auth::{TokenAccessIssuer, TokenAccessVerifier};
+  use tokio::sync::mpsc;
+  use tokio::time::timeout;
+  use crate::{ApplicationId, ApplicationSettings};
+  use crate::transport::shutdown_channel;
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn sends_heartbeat_within_max_idle_interval() {
+    let mut application = RealtimeApplication::new(
+      ApplicationId::new("application-1"),
+      TokenAccessIssuer::new("test-key", b"test-secret"),
+      TokenAccessVerifier::new("test-key", b"test-secret"),
+    );
+
+    application.settings = ApplicationSettings {
+      max_idle_interval: 5,
+      ..ApplicationSettings::default()
+    };
+
+    let (shutdown_trigger, _shutdown_listener) = shutdown_channel();
+    let (queue_sender, mut queue_receiver) = mpsc::channel(1);
+    let sender = OutboundSender::new(queue_sender, shutdown_trigger);
+    let heartbeat = Heartbeat::spawn(&sender, &application);
+
+    let received = timeout(
+      Duration::from_millis(100),
+      queue_receiver.recv(),
+    ).await;
+
+    heartbeat.finish().await;
+
+    assert!(
+      matches!(received, Ok(Some(_))),
+      "heartbeat must be sent within max_idle_interval",
+    );
+  }
+}

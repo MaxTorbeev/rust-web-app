@@ -42,3 +42,107 @@ impl Connection {
     &self.settings
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use auth::{TokenAccessIssuer, TokenAccessVerifier};
+  use crate::{ConnectionDetails, ProtocolMessage};
+
+  fn test_application(
+    id: &str,
+    settings: ApplicationSettings,
+  ) -> RealtimeApplication {
+    let mut application = RealtimeApplication::new(
+      ApplicationId::new(id),
+      TokenAccessIssuer::new("test-key", b"test-secret"),
+      TokenAccessVerifier::new("test-key", b"test-secret"),
+    );
+
+    application.settings = settings;
+    application
+  }
+
+  fn test_authorization() -> VerifiedToken {
+    VerifiedToken {
+      client_id: Some("client-123".to_owned()),
+      issued_at: 1,
+      expires_at: 2,
+      capability: r#"{"*": ["subscribe"]}"#
+        .parse()
+        .expect("test capability must be valid"),
+    }
+  }
+
+  #[test]
+  fn connected_messages_keep_the_connection_key() {
+    let application = test_application(
+      "application-1",
+      ApplicationSettings::default(),
+    );
+    let connection = application.create_connection(test_authorization());
+
+    let first = ProtocolMessage::connected(&connection);
+    let second = ProtocolMessage::connected(&connection);
+
+    let first_key = first
+      .connection_details
+      .as_ref()
+      .expect("CONNECTED must contain connection details")
+      .connection_key
+      .as_str();
+    let second_key = second
+      .connection_details
+      .as_ref()
+      .expect("CONNECTED must contain connection details")
+      .connection_key
+      .as_str();
+
+    assert_eq!(first_key, connection.connection_key());
+    assert_eq!(second_key, first_key);
+  }
+
+  #[test]
+  fn connection_keeps_the_creating_application_id() {
+    let application = test_application(
+      "application-1",
+      ApplicationSettings::default(),
+    );
+
+    let connection = application.create_connection(test_authorization());
+
+    assert_eq!(connection.application_id(), &application.id);
+  }
+
+  #[test]
+  fn connection_details_use_the_settings_snapshot_from_connect_time() {
+    let initial_settings = ApplicationSettings {
+      max_message_size: 1_001,
+      max_inbound_rate: 1_002,
+      max_outbound_rate: 1_003,
+      max_frame_size: 1_004,
+      connection_state_ttl: 1_005,
+      max_idle_interval: 1_006,
+    };
+    let mut application = test_application(
+      "application-1",
+      initial_settings.clone(),
+    );
+    let connection = application.create_connection(test_authorization());
+
+    // Later application changes must not alter an established connection.
+    application.settings = ApplicationSettings::default();
+
+    let details = ConnectionDetails::from(&connection);
+
+    assert_eq!(details.max_message_size, initial_settings.max_message_size);
+    assert_eq!(details.max_inbound_rate, initial_settings.max_inbound_rate);
+    assert_eq!(details.max_outbound_rate, initial_settings.max_outbound_rate);
+    assert_eq!(details.max_frame_size, initial_settings.max_frame_size);
+    assert_eq!(
+      details.connection_state_ttl,
+      initial_settings.connection_state_ttl,
+    );
+    assert_eq!(details.max_idle_interval, initial_settings.max_idle_interval);
+  }
+}

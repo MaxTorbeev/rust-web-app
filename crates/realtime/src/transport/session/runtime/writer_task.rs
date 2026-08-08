@@ -1,31 +1,39 @@
+use std::time::Duration;
 use axum::extract::ws::{WebSocket, Message};
 use futures_util::SinkExt;
 use futures_util::stream::SplitSink;
 use tokio::sync::mpsc::Receiver;
-use tokio::task::JoinError;
-use crate::{OutboundSendError, PreparedFrame};
-use crate::transport::{ShutdownListener, WriterPolicy};
+use tokio::task::{JoinError, JoinHandle};
+use crate::{PreparedFrame};
+use crate::transport::{SessionError, ShutdownListener, WriterPolicy};
+
+type WriterJoinResult = Result<Result<(), axum::Error>, JoinError>;
 
 pub struct WebSocketWriter {
-  task: tokio::task::JoinHandle<()>,
+  task: JoinHandle<Result<(), axum::Error>>,
 }
 
 impl WebSocketWriter {
+
   /// Spawn new web socket writer event loop task
+  ///
+  /// Ответ будет:
+  /// * Ok(Ok(())) — writer штатно завершился;
+  /// * Ok(Err(error)) — ошибка записи в WebSocket;
+  /// * Err(join_error) — task отменён или запаниковал.
   pub(crate) fn spawn(
     mut receiver: Receiver<PreparedFrame>,
     mut sender: SplitSink<WebSocket, Message>,
   ) -> Self {
-    let task = tokio::task::spawn(async move {
+    let task = tokio::spawn(async move {
       while let Some(frame) = receiver.recv().await {
-        if let Err(error) = sender
+        sender
           .send(frame.into_websocket_message())
-          .await
-        {
-          tracing::error!(%error, "websocket write failed");
-          break;
-        }
+          .await?;
       }
+
+      // Очередь закрыта и полностью обработана.
+      Ok(())
     });
 
     Self { task }
@@ -35,7 +43,7 @@ impl WebSocketWriter {
     &mut self,
     policy: WriterPolicy,
     shutdown: &mut ShutdownListener
-  ) -> Result<(), OutboundSendError> {
+  ) -> Result<(), SessionError> {
     match policy {
       WriterPolicy::DrainUntilShutdown => {
         self.drain_until_shutdown(shutdown).await
@@ -50,48 +58,59 @@ impl WebSocketWriter {
   }
 
   /// Ждать пока Writer не остановится
-  pub(crate) async fn wait_until_stopped(&mut self) -> Result<(), JoinError> {
-    (&mut self.task).await
+  pub(crate) async fn wait_until_stopped(&mut self) -> Result<(), SessionError> {
+    Self::map_join_result((&mut self.task).await)
   }
 
   async fn drain_until_shutdown(
     &mut self,
     shutdown: &mut ShutdownListener,
-  ) -> Result<(), OutboundSendError> {
-      tokio::select! {
-        writer_result = &mut self.task => {
-          Self::handle_join_result(writer_result)
-        }
-
-        true = shutdown.requested() => self.abort_and_wait().await
+  ) -> Result<(), SessionError> {
+    tokio::select! {
+      writer_result = &mut self.task => {
+        Self::map_join_result(writer_result)
       }
+
+      true = shutdown.requested() => {
+        self.abort_and_wait().await
+      }
+
+      _ = tokio::time::sleep(Duration::from_secs(2)) => {
+        // Writer не успел дописать очередь за отведённое время.
+        // Принудительно останавливаем task, чтобы session не зависла.
+        self.abort_and_wait().await?;
+
+        Err(SessionError::WriterDrainTimedOut)
+      }
+    }
   }
 
   pub fn abort(&mut self) {
     self.task.abort()
   }
 
-  async fn abort_and_wait(&mut self) -> Result<(), OutboundSendError> {
+  async fn abort_and_wait(&mut self) -> Result<(), SessionError> {
     self.task.abort();
 
     match (&mut self.task).await {
-      Ok(()) => Ok(()),
-      Err(e) if e.is_cancelled()  => Ok(()),
-      Err(e) => {
-        tracing::error!("Heartbeat task failed: {}", e);
-        Err(OutboundSendError::QueueClosed)
-      }
+      Err(error) if error.is_cancelled() => Ok(()),
+      result => Self::map_join_result(result),
     }
   }
 
-  fn handle_join_result(
-    result: Result<(), JoinError>,
-  ) -> Result<(), OutboundSendError> {
+  fn map_join_result(result: WriterJoinResult) -> Result<(), SessionError> {
     match result {
-      Ok(()) => Ok(()),
-      Err(e) => {
-        tracing::error!("websocket writer task failed: {}", e);
-        Err(OutboundSendError::QueueClosed)
+      // Writer task завершилась штатно после обработки очереди.
+      Ok(Ok(())) => Ok(()),
+
+      // Task завершилась без panic, но запись в WebSocket вернула ошибку.
+      Ok(Err(error)) => {
+        Err(SessionError::Write(error))
+      }
+
+      // Writer task была отменена или завершилась panic.
+      Err(error) => {
+        Err(SessionError::WriterTaskFailed(error))
       }
     }
   }
@@ -109,7 +128,9 @@ mod tests {
   async fn drain_aborts_pending_writer_after_shutdown_request() {
     // A forever-pending task models a writer blocked by socket backpressure.
     let mut writer = WebSocketWriter {
-      task: tokio::spawn(pending::<()>()),
+      task: tokio::spawn(
+        pending::<Result<(), axum::Error>>()
+      ),
     };
 
     let (shutdown_trigger, mut shutdown_listener) = shutdown_channel();
