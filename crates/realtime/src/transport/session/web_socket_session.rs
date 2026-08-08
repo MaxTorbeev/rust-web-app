@@ -131,6 +131,8 @@ impl WebSocketSession {
   /// Waiting for ending session
   async fn wait_for_end(&mut self) -> EndReason {
     tokio::select! {
+      biased; // Директива указывающая фиксированный порядок веток
+
       // При нормальном Disconnect очередь можно дописать.
       // При ошибке writer нужно остановить принудительно.
       reader_result = self.reader.run(

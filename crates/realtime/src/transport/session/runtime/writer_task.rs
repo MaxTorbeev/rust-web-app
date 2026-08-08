@@ -124,14 +124,45 @@ mod tests {
   use tokio::time::timeout;
   use crate::transport::shutdown_channel;
 
-  #[tokio::test(flavor = "current_thread")]
-  async fn drain_aborts_pending_writer_after_shutdown_request() {
-    // A forever-pending task models a writer blocked by socket backpressure.
-    let mut writer = WebSocketWriter {
+  fn pending_writer() -> WebSocketWriter {
+    WebSocketWriter {
       task: tokio::spawn(
         pending::<Result<(), axum::Error>>()
       ),
-    };
+    }
+  }
+
+  async fn panic_writer_task() -> Result<(), axum::Error> {
+    panic!("intentional writer task panic")
+  }
+
+  #[test]
+  fn maps_websocket_write_error() {
+    let write_error = axum::Error::new(
+      std::io::Error::other("websocket write failed")
+    );
+
+    let result = WebSocketWriter::map_join_result(
+      Ok(Err(write_error))
+    );
+
+    assert!(matches!(result, Err(SessionError::Write(_))));
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn maps_writer_task_panic() {
+    let join_result = tokio::spawn(panic_writer_task()).await;
+
+    assert!(matches!(
+      WebSocketWriter::map_join_result(join_result),
+      Err(SessionError::WriterTaskFailed(error)) if error.is_panic(),
+    ));
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn drain_aborts_pending_writer_after_shutdown_request() {
+    // A forever-pending task models a writer blocked by socket backpressure.
+    let mut writer = pending_writer();
 
     let (shutdown_trigger, mut shutdown_listener) = shutdown_channel();
 
@@ -162,5 +193,25 @@ mod tests {
 
     assert!(result.is_ok(), "an expected writer abort is not an error");
     assert!(writer.task.is_finished(), "the blocked writer must be stopped");
+  }
+
+  #[tokio::test(flavor = "current_thread", start_paused = true)]
+  async fn drain_aborts_pending_writer_after_timeout() {
+    // A pending writer must not keep the WebSocket session alive indefinitely.
+    let mut writer = pending_writer();
+    let (_shutdown_trigger, mut shutdown_listener) = shutdown_channel();
+
+    let result = writer
+      .finish(
+        WriterPolicy::DrainUntilShutdown,
+        &mut shutdown_listener,
+      )
+      .await;
+
+    assert!(matches!(
+      result,
+      Err(SessionError::WriterDrainTimedOut),
+    ));
+    assert!(writer.task.is_finished(), "the timed-out writer must be stopped");
   }
 }

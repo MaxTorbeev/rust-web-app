@@ -1,4 +1,3 @@
-use tokio::task::JoinError;
 use crate::OutboundSendError;
 use crate::transport::protocol_reader::{ReaderEndReason, ReaderError, ReaderResult};
 use crate::transport::SessionError;

@@ -1,0 +1,337 @@
+//! Интеграционные тесты сессии запускают настоящий WebSocket через локальный Axum-сервер.
+//! Новые сценарии можно собирать из `send`, `expect_action` и проверок состояния.
+
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
+use axum::extract::ws::WebSocketUpgrade;
+use axum::routing::any;
+use axum::Router;
+use event_bus::{Event, EventBus, ListenerHandle};
+use futures_util::{SinkExt, StreamExt};
+use realtime::{
+  ApplicationId,
+  Connection,
+  ConnectionId,
+  PresenceAction,
+  ProtocolAction,
+  ProtocolMessage,
+  RealtimeApplication,
+  WebsocketConnected,
+  WebsocketDisconnected,
+};
+use serde_json::{json, Value};
+use tokio::net::TcpStream;
+use tokio::sync::mpsc::{self, UnboundedReceiver};
+use tokio::task::JoinHandle;
+use tokio::time::{sleep, timeout};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
+
+const TEST_TIMEOUT: Duration = Duration::from_secs(1);
+// EventBus локальный: короткого окна достаточно, чтобы поймать повторную отправку.
+const NO_EVENT_TIMEOUT: Duration = Duration::from_millis(50);
+const CHANNEL: &str = "session-cleanup";
+
+type ClientSocket = WebSocketStream<MaybeTlsStream<TcpStream>>;
+
+#[tokio::test(flavor = "current_thread")]
+async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
+  let mut session = TestSession::connect().await;
+  let connection_id = session.connection_id.clone();
+
+  let connected = session
+    .expect_action(ProtocolAction::Connected)
+    .await;
+  assert_eq!(
+    connected.connection_id.as_deref(),
+    Some(connection_id.as_str()),
+  );
+  session.events.expect_connected(&connection_id).await;
+
+  // Создаём состояние channel и presence, которое session должна очистить.
+  session.send(json!({
+    "action": ProtocolAction::Attach,
+    "channel": CHANNEL,
+  })).await;
+  session.expect_action(ProtocolAction::Attached).await;
+  session.expect_action(ProtocolAction::Sync).await;
+
+  session.send(json!({
+    "action": ProtocolAction::Presence,
+    "channel": CHANNEL,
+    "msgSerial": 1,
+    "presence": [{ "action": PresenceAction::Enter }],
+  })).await;
+  session.expect_action(ProtocolAction::Presence).await;
+  session.expect_action(ProtocolAction::Ack).await;
+
+  // Без этих предусловий последующая проверка cleanup ничего не доказывает.
+  assert!(session.is_attached(CHANNEL).await);
+  assert_eq!(session.presence_count(CHANNEL).await, 1);
+
+  session.send(json!({
+    "action": ProtocolAction::Disconnect,
+  })).await;
+  session.expect_action(ProtocolAction::Disconnected).await;
+  session.events.expect_disconnected(&connection_id).await;
+
+  // После finish ни channel, ни presence не должны хранить connection.
+  assert!(!session.is_attached(CHANNEL).await);
+  assert_eq!(session.presence_count(CHANNEL).await, 0);
+  session.events.expect_no_more_events().await;
+}
+
+/// Собирает lifecycle events отдельно от сообщений WebSocket-протокола.
+struct LifecycleEvents {
+  connected: UnboundedReceiver<WebsocketConnected>,
+  disconnected: UnboundedReceiver<WebsocketDisconnected>,
+  _subscriptions: [ListenerHandle; 2],
+}
+
+impl LifecycleEvents {
+  async fn subscribe(event_bus: &EventBus) -> Self {
+    let (connected_subscription, connected) =
+      subscribe_to::<WebsocketConnected>(event_bus).await;
+    let (disconnected_subscription, disconnected) =
+      subscribe_to::<WebsocketDisconnected>(event_bus).await;
+
+    Self {
+      connected,
+      disconnected,
+      _subscriptions: [
+        connected_subscription,
+        disconnected_subscription,
+      ],
+    }
+  }
+
+  async fn expect_connected(&mut self, connection_id: &ConnectionId) {
+    let event = receive_event(
+      &mut self.connected,
+      "WebsocketConnected",
+    ).await;
+
+    assert_eq!(event.connection_id, connection_id.as_str());
+  }
+
+  async fn expect_disconnected(&mut self, connection_id: &ConnectionId) {
+    let event = receive_event(
+      &mut self.disconnected,
+      "WebsocketDisconnected",
+    ).await;
+
+    assert_eq!(event.connection_id, connection_id.as_str());
+  }
+
+  async fn expect_no_more_events(&mut self) {
+    tokio::select! {
+      Some(event) = self.connected.recv() => {
+        panic!("unexpected additional WebsocketConnected event: {event:?}");
+      }
+
+      Some(event) = self.disconnected.recv() => {
+        panic!("unexpected additional WebsocketDisconnected event: {event:?}");
+      }
+
+      _ = sleep(NO_EVENT_TIMEOUT) => {}
+    }
+  }
+}
+
+/// Тестовое окружение для одного реального WebSocket connection.
+/// Сервер автоматически останавливается при завершении теста.
+struct TestSession {
+  socket: ClientSocket,
+  application: Arc<RealtimeApplication>,
+  connection_id: ConnectionId,
+  events: LifecycleEvents,
+  server: JoinHandle<()>,
+}
+
+impl TestSession {
+  async fn connect() -> Self {
+    let event_bus = Arc::new(
+      EventBus::new()
+        .await
+        .expect("test event bus must start"),
+    );
+    let events = LifecycleEvents::subscribe(&event_bus).await;
+    let application = test_application();
+    let connection = application.create_connection(test_authorization());
+    let connection_id = connection.id.clone();
+    let router = single_connection_router(
+      connection,
+      application.clone(),
+      event_bus,
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+      .await
+      .expect("test server must bind");
+    let address = listener
+      .local_addr()
+      .expect("test server must have an address");
+    let server = tokio::spawn(async move {
+      axum::serve(listener, router)
+        .await
+        .expect("test server must run");
+    });
+
+    let (socket, _) =
+      tokio_tungstenite::connect_async(format!("ws://{address}/"))
+        .await
+        .expect("test client must connect");
+
+    Self {
+      socket,
+      application,
+      connection_id,
+      events,
+      server,
+    }
+  }
+
+  async fn send(&mut self, message: Value) {
+    self
+      .socket
+      .send(Message::Text(message.to_string().into()))
+      .await
+      .expect("protocol message must be sent");
+  }
+
+  async fn expect_action(
+    &mut self,
+    expected_action: ProtocolAction,
+  ) -> ProtocolMessage {
+    let message = self.receive().await;
+    let actual_code = message.action.clone() as u8;
+    let expected_code = expected_action as u8;
+
+    assert_eq!(
+      actual_code,
+      expected_code,
+      "unexpected protocol action",
+    );
+
+    message
+  }
+
+  async fn is_attached(&self, channel: &str) -> bool {
+    self
+      .application
+      .channel_hub
+      .is_attached(channel, &self.connection_id)
+      .await
+  }
+
+  async fn presence_count(&self, channel: &str) -> usize {
+    self
+      .application
+      .presence_hub
+      .snapshot(channel)
+      .await
+      .len()
+  }
+
+  async fn receive(&mut self) -> ProtocolMessage {
+    let frame = timeout(TEST_TIMEOUT, self.socket.next())
+      .await
+      .expect("the session must respond")
+      .expect("the WebSocket must remain open")
+      .expect("the WebSocket frame must be readable");
+
+    let Message::Text(text) = frame else {
+      panic!("expected a text protocol frame");
+    };
+
+    serde_json::from_str(text.as_str())
+      .expect("the frame must contain a protocol message")
+  }
+}
+
+impl Drop for TestSession {
+  fn drop(&mut self) {
+    self.server.abort();
+  }
+}
+
+async fn subscribe_to<E: Event>(
+  event_bus: &EventBus,
+) -> (ListenerHandle, UnboundedReceiver<E>) {
+  let (sender, receiver) = mpsc::unbounded_channel();
+  let subscription = event_bus
+    .subscribe(move |event: E| {
+      let sender = sender.clone();
+
+      async move {
+        let _ = sender.send(event);
+      }
+    })
+    .await
+    .expect("lifecycle listener must subscribe");
+
+  (subscription, receiver)
+}
+
+async fn receive_event<E>(
+  receiver: &mut UnboundedReceiver<E>,
+  event_name: &str,
+) -> E {
+  timeout(TEST_TIMEOUT, receiver.recv())
+    .await
+    .unwrap_or_else(|_| panic!("{event_name} event must be emitted"))
+    .unwrap_or_else(|| panic!("{event_name} event channel must stay open"))
+}
+
+fn single_connection_router(
+  connection: Connection,
+  application: Arc<RealtimeApplication>,
+  event_bus: Arc<EventBus>,
+) -> Router {
+  let pending_connection = Arc::new(Mutex::new(Some(connection)));
+
+  Router::new().route(
+    "/",
+    any(move |ws: WebSocketUpgrade| {
+      let application = application.clone();
+      let event_bus = event_bus.clone();
+      let connection = pending_connection
+        .lock()
+        .expect("test connection lock must not be poisoned")
+        .take()
+        .expect("the test accepts exactly one WebSocket");
+
+      async move {
+        ws.on_upgrade(move |socket| {
+          realtime::websocket::handle_socket(
+            socket,
+            connection,
+            application,
+            event_bus,
+          )
+        })
+      }
+    }),
+  )
+}
+
+fn test_application() -> Arc<RealtimeApplication> {
+  Arc::new(RealtimeApplication::new(
+    ApplicationId::new("application-1"),
+    TokenAccessIssuer::new("test-key", b"test-secret"),
+    TokenAccessVerifier::new("test-key", b"test-secret"),
+  ))
+}
+
+fn test_authorization() -> VerifiedToken {
+  VerifiedToken {
+    client_id: Some("client-123".to_owned()),
+    issued_at: 1,
+    expires_at: 2,
+    capability: r#"{"*": ["subscribe", "presence"]}"#
+      .parse()
+      .expect("test capability must be valid"),
+  }
+}
