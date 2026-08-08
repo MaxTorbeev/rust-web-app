@@ -1,6 +1,7 @@
 use tokio::sync::{mpsc, watch};
 
 use crate::{PreparedFrame, ProtocolMessage};
+use crate::transport::ShutdownTrigger;
 
 /// Дескриптор исходящей очереди одного WebSocket-соединения.
 ///
@@ -12,7 +13,7 @@ pub struct OutboundSender {
 
   /// Передаёт WebSocket-сессии сигнал о необходимости
   /// принудительно завершить соединение.
-  shutdown_signal: watch::Sender<bool>
+  shutdown: ShutdownTrigger
 }
 
 #[derive(Debug)]
@@ -24,13 +25,10 @@ pub enum OutboundSendError {
 
 
 impl OutboundSender {
-  pub fn new(
-    inner: mpsc::Sender<PreparedFrame>,
-    shutdown_signal: watch::Sender<bool>
-  ) -> Self {
+  pub fn new(inner: mpsc::Sender<PreparedFrame>, shutdown: ShutdownTrigger) -> Self {
     Self {
       inner,
-      shutdown_signal
+      shutdown
     }
   }
 
@@ -43,7 +41,7 @@ impl OutboundSender {
   }
 
   pub fn request_shutdown(&self) {
-    self.shutdown_signal.send_replace(true);
+    self.shutdown.request();
   }
 
   pub fn try_enqueue_prepared_frame(&self, frame: PreparedFrame) -> Result<(), OutboundSendError> {

@@ -10,7 +10,7 @@ pub struct ShutdownListener {
 }
 
 impl ShutdownTrigger {
-  fn request(&self) {
+  pub fn request(&self) {
     self.sender.send_replace(true);
   }
 }
@@ -29,4 +29,13 @@ impl ShutdownListener {
       .await
       .is_ok()
   }
+}
+
+pub(crate) fn shutdown_channel() -> (ShutdownTrigger, ShutdownListener) {
+  let (sender, receiver) = watch::channel(false);
+
+  (
+    ShutdownTrigger { sender },
+    ShutdownListener { receiver },
+  )
 }

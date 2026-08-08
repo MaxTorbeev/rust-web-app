@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use axum::extract::ws::WebSocket;
 use futures_util::StreamExt;
-use tokio::sync::{mpsc, watch};
+use tokio::sync::{mpsc};
 use tokio::sync::mpsc::Receiver;
 use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, RealtimeApplication};
-use crate::transport::{EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy};
+use crate::transport::{shutdown_channel, EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy};
 use crate::transport::protocol_reader::ProtocolReader;
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
@@ -31,19 +31,18 @@ impl WebSocketSession {
     ) = socket.split();
 
     let (
-      outbound_sender,
+      sender,
       receiver,
-      shutdown_receiver
+      shutdown_listener
     ) = Self::outbound_channel();
 
-    let shutdown_listener = ShutdownListener::new(shutdown_receiver);
     let reader = ProtocolReader::new(websocket_receiver);
     let writer = WebSocketWriter::spawn(receiver, websocket_sender);
 
     Self {
       connection,
       application,
-      sender: outbound_sender,
+      sender,
       shutdown_listener,
       reader,
       writer,
@@ -51,6 +50,7 @@ impl WebSocketSession {
     }
   }
 
+  /// Start websocket session
   pub async fn run(mut self) -> Result<(), OutboundSendError> {
     let end_reason = match self.send_connected() {
       Ok(()) => {
@@ -95,20 +95,21 @@ impl WebSocketSession {
     }
   }
 
-  fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>, watch::Receiver<bool>) {
+
+  fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>, ShutdownListener) {
+    let (shutdown_trigger, shutdown_listener) = shutdown_channel();
+
     let (
       queue_sender,
       queue_receiver
     ) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
 
-    let (shutdown_sender, shutdown_receiver) = watch::channel(false);
-
-    let sender = OutboundSender::new(queue_sender, shutdown_sender);
+    let sender = OutboundSender::new(queue_sender, shutdown_trigger);
 
     (
       sender,
       queue_receiver,
-      shutdown_receiver,
+      shutdown_listener,
     )
   }
 
@@ -119,7 +120,7 @@ impl WebSocketSession {
     self.sender.try_enqueue_protocol_message(&connected)
   }
 
-  ///
+  /// Waiting for ending session
   async fn wait_for_end(&mut self) -> EndReason {
     tokio::select! {
       // При нормальном Disconnect очередь можно дописать.
