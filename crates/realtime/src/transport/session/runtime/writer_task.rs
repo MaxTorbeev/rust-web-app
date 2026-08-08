@@ -3,7 +3,7 @@ use futures_util::SinkExt;
 use futures_util::stream::SplitSink;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::JoinError;
-use crate::{OutboundSendError, OutboundSender, PreparedFrame};
+use crate::{OutboundSendError, PreparedFrame};
 use crate::transport::{ShutdownListener, WriterPolicy};
 
 pub struct WebSocketWriter {
@@ -94,5 +94,52 @@ impl WebSocketWriter {
         Err(OutboundSendError::QueueClosed)
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::future::pending;
+  use std::time::Duration;
+  use tokio::time::timeout;
+  use crate::transport::shutdown_channel;
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn drain_aborts_pending_writer_after_shutdown_request() {
+    // A forever-pending task models a writer blocked by socket backpressure.
+    let mut writer = WebSocketWriter {
+      task: tokio::spawn(pending::<()>()),
+    };
+
+    let (shutdown_trigger, mut shutdown_listener) = shutdown_channel();
+
+    let result = {
+      let finish = writer.finish(
+        WriterPolicy::DrainUntilShutdown,
+        &mut shutdown_listener,
+      );
+      tokio::pin!(finish);
+
+      // Drain must keep waiting while neither the writer nor shutdown is ready.
+      tokio::select! {
+        biased;
+
+        result = &mut finish => {
+          panic!("drain finished before shutdown: {result:?}");
+        }
+
+        _ = tokio::task::yield_now() => {}
+      }
+
+      shutdown_trigger.request();
+
+      timeout(Duration::from_secs(1), &mut finish)
+      .await
+      .expect("shutdown must stop a blocked writer")
+    };
+
+    assert!(result.is_ok(), "an expected writer abort is not an error");
+    assert!(writer.task.is_finished(), "the blocked writer must be stopped");
   }
 }

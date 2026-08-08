@@ -181,3 +181,136 @@ impl ChannelHub {
     removed
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::time::Duration;
+  use axum::extract::ws::Message as WebSocketMessage;
+  use tokio::sync::mpsc;
+  use tokio::time::timeout;
+  use crate::ProtocolAction;
+  use crate::transport::{shutdown_channel, ShutdownListener};
+
+  const TEST_TIMEOUT: Duration = Duration::from_secs(1);
+  const CHANNEL_A: &str = "channel-a";
+  const CHANNEL_B: &str = "channel-b";
+
+  fn test_connection(
+    capacity: usize,
+  ) -> (
+    OutboundSender,
+    mpsc::Receiver<PreparedFrame>,
+    ShutdownListener,
+  ) {
+    let (shutdown_trigger, shutdown_listener) = shutdown_channel();
+    let (queue_sender, queue_receiver) = mpsc::channel(capacity);
+
+    (
+      OutboundSender::new(queue_sender, shutdown_trigger),
+      queue_receiver,
+      shutdown_listener,
+    )
+  }
+
+  fn assert_heartbeat_frame(frame: PreparedFrame) {
+    let WebSocketMessage::Text(text) = frame.into_websocket_message() else {
+      panic!("expected a text WebSocket frame");
+    };
+
+    let message = serde_json::from_str::<ProtocolMessage>(text.as_str())
+      .expect("broadcast frame must contain a protocol message");
+
+    assert!(matches!(message.action, ProtocolAction::Heartbeat));
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn full_recipient_does_not_block_healthy_recipient() {
+    let hub = ChannelHub::new();
+    let slow_connection_id = ConnectionId::generate();
+    let healthy_connection_id = ConnectionId::generate();
+
+    let (slow_sender, _slow_receiver, mut slow_shutdown) = test_connection(1);
+    let (healthy_sender, mut healthy_receiver, _healthy_shutdown) = test_connection(1);
+
+    // Only the slow connection starts with a full outbound queue.
+    slow_sender
+      .try_enqueue_protocol_message(&ProtocolMessage::heartbeat())
+      .expect("the first frame must fill the slow queue");
+
+    // The second subscription proves that overflow disconnects the whole
+    // connection, not only its subscription to the broadcast channel.
+    hub.attach(CHANNEL_A, slow_connection_id.clone(), slow_sender.clone()).await;
+    hub.attach(CHANNEL_B, slow_connection_id.clone(), slow_sender).await;
+    hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
+
+    let sent = timeout(
+      TEST_TIMEOUT,
+      hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
+    )
+      .await
+      .expect("a full recipient must not block broadcast");
+
+    assert_eq!(sent, 1, "only the healthy queue must accept the frame");
+
+    let healthy_frame = timeout(TEST_TIMEOUT, healthy_receiver.recv())
+      .await
+      .expect("healthy recipient must receive without delay")
+      .expect("healthy queue must remain open");
+
+    assert_heartbeat_frame(healthy_frame);
+
+    assert!(
+      timeout(TEST_TIMEOUT, slow_shutdown.requested())
+        .await
+        .expect("slow connection must receive shutdown"),
+    );
+
+    assert!(!hub.is_attached(CHANNEL_A, &slow_connection_id).await);
+    assert!(!hub.is_attached(CHANNEL_B, &slow_connection_id).await);
+    assert!(hub.is_attached(CHANNEL_A, &healthy_connection_id).await);
+  }
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn closed_recipient_does_not_block_healthy_recipient() {
+    let hub = ChannelHub::new();
+    let closed_connection_id = ConnectionId::generate();
+    let healthy_connection_id = ConnectionId::generate();
+
+    let (closed_sender, closed_receiver, mut closed_shutdown) = test_connection(1);
+    let (healthy_sender, mut healthy_receiver, _healthy_shutdown) = test_connection(1);
+
+    // A dropped receiver models a WebSocket writer that has already stopped.
+    drop(closed_receiver);
+
+    hub.attach(CHANNEL_A, closed_connection_id.clone(), closed_sender.clone()).await;
+    hub.attach(CHANNEL_B, closed_connection_id.clone(), closed_sender).await;
+    hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
+
+    let sent = timeout(
+      TEST_TIMEOUT,
+      hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
+    )
+      .await
+      .expect("a closed recipient must not block broadcast");
+
+    assert_eq!(sent, 1, "only the healthy queue must accept the frame");
+
+    let healthy_frame = timeout(TEST_TIMEOUT, healthy_receiver.recv())
+      .await
+      .expect("healthy recipient must receive without delay")
+      .expect("healthy queue must remain open");
+
+    assert_heartbeat_frame(healthy_frame);
+
+    assert!(
+      timeout(TEST_TIMEOUT, closed_shutdown.requested())
+        .await
+        .expect("closed connection must receive shutdown"),
+    );
+
+    assert!(!hub.is_attached(CHANNEL_A, &closed_connection_id).await);
+    assert!(!hub.is_attached(CHANNEL_B, &closed_connection_id).await);
+    assert!(hub.is_attached(CHANNEL_A, &healthy_connection_id).await);
+  }
+}

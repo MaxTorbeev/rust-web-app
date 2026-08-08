@@ -144,3 +144,41 @@ impl WebSocketSession {
     }
   }
 }
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use std::time::Duration;
+  use tokio::time::timeout;
+
+  #[tokio::test(flavor = "current_thread")]
+  async fn outbound_channel_is_bounded_and_propagates_shutdown() {
+    let (sender, _receiver, mut shutdown_listener) =
+      WebSocketSession::outbound_channel();
+
+    // The session queue must reject new frames once all bounded slots are used.
+    for _ in 0..OUTBOUND_QUEUE_CAPACITY {
+      sender
+        .try_enqueue_protocol_message(&ProtocolMessage::heartbeat())
+        .expect("frame must fit within the configured capacity");
+    }
+
+    assert!(matches!(
+      sender.try_enqueue_protocol_message(&ProtocolMessage::heartbeat()),
+      Err(OutboundSendError::QueueFull),
+    ));
+
+    // The signal is state-based: requesting it before awaiting must not lose it.
+    sender.request_shutdown();
+    sender.request_shutdown();
+
+    let requested = timeout(
+      Duration::from_secs(1),
+      shutdown_listener.requested(),
+    )
+      .await
+      .expect("shutdown listener must observe the sender signal");
+
+    assert!(requested);
+  }
+}
