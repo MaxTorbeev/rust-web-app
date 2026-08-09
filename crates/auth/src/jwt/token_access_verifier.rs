@@ -85,31 +85,48 @@ mod tests {
   use super::*;
   use jsonwebtoken::{encode, EncodingKey, Header};
 
+  const KEY_NAME: &str = "primary";
+  const KEY_SECRET: &[u8] = b"secret";
+  const CAPABILITY: &str = r#"{"private:*":["subscribe","publish"]}"#;
+
+  fn valid_claims(now: u64, client_id: Option<&str>) -> TokenClaims {
+    TokenClaims {
+      iat: now,
+      exp: now + 3600,
+      client_id: client_id.map(str::to_owned),
+      capability: CAPABILITY.to_owned(),
+    }
+  }
+
+  fn encode_token(
+    claims: &TokenClaims,
+    key_name: Option<&str>,
+    key_secret: &[u8],
+  ) -> String {
+    let mut header = Header::new(Algorithm::HS256);
+    header.kid = key_name.map(str::to_owned);
+
+    encode(
+      &header,
+      claims,
+      &EncodingKey::from_secret(key_secret),
+    ).expect("test JWT must be encoded")
+  }
+
+  fn verify(token: &str) -> Result<VerifiedToken, TokenVerifyError> {
+    TokenAccessVerifier::new(KEY_NAME, KEY_SECRET).verify(token)
+  }
+
+  /// Проверяет чтение identity, временных claims и capability из корректного JWT.
   #[test]
   fn verifies_valid_token() {
-    const KEY_NAME: &str = "primary";
-    const KEY_SECRET: &[u8] = b"secret";
-
     let now = get_current_timestamp();
-    let claims = serde_json::json!({
-      "iat": now,
-      "exp": now + 3600,
-      "x-ably-clientId": "client-123",
-      "x-ably-capability": r#"{"private:*":["subscribe","publish"]}"#
-    });
-
-    let mut header = Header::new(Algorithm::HS256);
-    header.kid = Some(KEY_NAME.to_string());
-
-    let token = encode(
-      &header,
-      &claims,
-      &EncodingKey::from_secret(KEY_SECRET)
-    ).unwrap();
-
-    let verified = TokenAccessVerifier::new(KEY_NAME, KEY_SECRET)
-      .verify(&token)
-      .unwrap();
+    let token = encode_token(
+      &valid_claims(now, Some("client-123")),
+      Some(KEY_NAME),
+      KEY_SECRET,
+    );
+    let verified = verify(&token).expect("valid JWT must be accepted");
 
     assert_eq!(verified.client_id.as_deref(), Some("client-123"));
     assert_eq!(verified.issued_at, now);
@@ -125,4 +142,136 @@ mod tests {
     assert!(operations.contains("publish"));
   }
 
+  /// Проверяет, что строка без структуры JWT отклоняется как невалидный токен.
+  #[test]
+  fn rejects_malformed_token() {
+    assert!(matches!(
+      verify("not-a-jwt"),
+      Err(TokenVerifyError::InvalidToken(_)),
+    ));
+  }
+
+  /// Проверяет, что JWT с подписью от другого секрета не проходит проверку.
+  #[test]
+  fn rejects_token_with_invalid_signature() {
+    let now = get_current_timestamp();
+    let token = encode_token(
+      &valid_claims(now, Some("client-123")),
+      Some(KEY_NAME),
+      b"another-secret",
+    );
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::InvalidToken(_)),
+    ));
+  }
+
+  /// Проверяет, что JWT без идентификатора ключа `kid` отклоняется до проверки подписи.
+  #[test]
+  fn rejects_token_without_key_id() {
+    let now = get_current_timestamp();
+    let token = encode_token(
+      &valid_claims(now, Some("client-123")),
+      None,
+      KEY_SECRET,
+    );
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::MissingKeyId),
+    ));
+  }
+
+  /// Проверяет, что JWT, подписанный неизвестным `kid`, возвращает оба значения ключа.
+  #[test]
+  fn rejects_unexpected_key_id() {
+    let now = get_current_timestamp();
+    let token = encode_token(
+      &valid_claims(now, Some("client-123")),
+      Some("secondary"),
+      KEY_SECRET,
+    );
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::UnexpectedKeyId { expected, actual })
+        if expected == KEY_NAME && actual == "secondary",
+    ));
+  }
+
+  /// Проверяет, что токен старше настроенного 60-секундного leeway считается просроченным.
+  #[test]
+  fn rejects_expired_token() {
+    let now = get_current_timestamp();
+    let mut claims = valid_claims(now, Some("client-123"));
+    claims.iat = now.saturating_sub(3600);
+    claims.exp = now.saturating_sub(120);
+
+    let token = encode_token(&claims, Some(KEY_NAME), KEY_SECRET);
+
+    assert!(matches!(verify(&token), Err(TokenVerifyError::Expired)));
+  }
+
+  /// Проверяет, что `iat` значительно позже серверного времени отклоняется явно.
+  #[test]
+  fn rejects_token_issued_in_future() {
+    let now = get_current_timestamp();
+    let mut claims = valid_claims(now, Some("client-123"));
+    claims.iat = now + 120;
+
+    let token = encode_token(&claims, Some(KEY_NAME), KEY_SECRET);
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::IssuedAtInFuture { issued_at, .. })
+        if issued_at == now + 120,
+    ));
+  }
+
+  /// Проверяет, что присутствующий, но пустой `client_id` не принимается как identity.
+  #[test]
+  fn rejects_empty_client_id() {
+    let now = get_current_timestamp();
+    let token = encode_token(
+      &valid_claims(now, Some("")),
+      Some(KEY_NAME),
+      KEY_SECRET,
+    );
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::EmptyClientId),
+    ));
+  }
+
+  /// Проверяет поддерживаемый Ably-сценарий JWT без привязанного `client_id`.
+  #[test]
+  fn accepts_missing_client_id() {
+    let now = get_current_timestamp();
+    let token = encode_token(
+      &valid_claims(now, None),
+      Some(KEY_NAME),
+      KEY_SECRET,
+    );
+
+    let verified = verify(&token).expect("JWT without client_id must be accepted");
+
+    assert_eq!(verified.client_id, None);
+  }
+
+  /// Проверяет, что capability должна содержать корректный JSON с разрешениями.
+  #[test]
+  fn rejects_invalid_capability_json() {
+    let now = get_current_timestamp();
+    let mut claims = valid_claims(now, Some("client-123"));
+    claims.capability = "not-json".to_owned();
+
+    let token = encode_token(&claims, Some(KEY_NAME), KEY_SECRET);
+
+    assert!(matches!(
+      verify(&token),
+      Err(TokenVerifyError::InvalidCapability(_)),
+    ));
+  }
 }
