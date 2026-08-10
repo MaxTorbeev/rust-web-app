@@ -12,12 +12,15 @@ pub async fn access_token(
     State(realtime): State<Arc<Realtime>>,
     Json(payload): Json<AccessTokenRequest>,
 ) -> Result<ApiResponse<AccessTokenResponse>, ApiError> {
+    // TODO(security): WARNING: this endpoint trusts the caller-provided client_id.
+    // Require an authenticated user/application and authorize the requested identity.
     let ttl_seconds = 60;
 
     let application_id = ApplicationId::new(application_id);
     let client_id = payload.client_id;
 
-    // temporary capability
+    // TODO(security): WARNING: every caller currently receives wildcard permissions.
+    // Derive the narrowest capability from the authenticated product/user permissions.
     let capability = r#"{"*": ["publish", "subscribe", "presence"]}"#
         .parse::<TokenCapability>()
         .expect("static realtime capability must be valid");

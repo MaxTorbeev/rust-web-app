@@ -4,6 +4,8 @@ use crate::transport::SocketContext;
 pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
   match message.channel.as_deref() {
     Some(channel) => {
+      // TODO(security): WARNING: presence operations are not checked against token capability.
+      // Require `presence` permission for this channel before mutating presence state.
       if !context.channel_hub.is_attached(channel, &context.connection.id).await {
         ProtocolMessage::nack(message.msg_serial)
       } else {

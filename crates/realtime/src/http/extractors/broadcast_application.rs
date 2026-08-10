@@ -50,6 +50,8 @@ where
       .split_once(':')
       .ok_or_else(|| ApiError::unauthorized("Invalid Basic credentials"))?;
 
+    // TODO(security): WARNING: Basic auth currently selects an application by id only.
+    // Validate the full product key, secret, active/revoked state and publish permissions.
     let application_key_name = key_name
       .parse::<ApplicationKeyName>()
       .map_err(|_| ApiError::unauthorized("Invalid Basic credentials"))?;

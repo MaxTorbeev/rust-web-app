@@ -130,6 +130,8 @@ impl WebSocketSession {
 
   /// Waiting for ending session
   async fn wait_for_end(&mut self) -> EndReason {
+    // TODO(security): WARNING: authorization.expires_at is not observed after the handshake.
+    // Trigger reauthorization before expiry and close the connection if renewal fails.
     tokio::select! {
       biased; // Директива указывающая фиксированный порядок веток
 

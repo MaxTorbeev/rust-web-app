@@ -10,10 +10,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = "0.8.9"
 tokio = { version = "1.52.3", features = ["full"] }
 redis-client = { path = "crates/redis-client" }
+nats-client = { path = "crates/nats-client" }
 realtime = { path = "crates/realtime" }
 auth = { path = "crates/auth" }
 event-bus = { path = "crates/event-bus" }
 
 [workspace]
-members = [".", "crates/api-response", "crates/auth", "crates/realtime", "crates/redis-client", "crates/realtime", "crates/support", "crates/event-bus"]
+members = [".", "crates/nats-client", "crates/api-response", "crates/auth", "crates/realtime", "crates/redis-client", "crates/realtime", "crates/support", "crates/event-bus", "crates/nats-client"]
 resolver = "3"

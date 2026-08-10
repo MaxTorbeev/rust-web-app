@@ -17,6 +17,8 @@ impl TokenAccessVerifier {
 
     validation.leeway = 60;
 
+    // TODO(security): WARNING: JWT is not bound to an expected issuer or audience.
+    // Add and validate product/application claims when the credential model supports them.
     validation.validate_aud = false;
 
     Self {
@@ -67,6 +69,8 @@ impl TokenAccessVerifier {
       });
     }
 
+    // TODO(security): WARNING: parsing only validates the capability JSON shape.
+    // Every protocol action must also enforce the requested operation and channel.
     let capability = claims
       .capability
       .parse::<TokenCapability>()?;

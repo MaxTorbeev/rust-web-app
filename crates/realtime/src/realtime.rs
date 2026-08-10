@@ -52,6 +52,8 @@ impl Realtime {
 
     let application_id = application_key_name.application_id();
 
+    // TODO(security): WARNING: the registry currently resolves only one static key per application.
+    // Resolve `key_id` through a product-key registry to check status, revocation and key permissions.
     let application = self
       .application(application_id)
       .ok_or_else(|| {
