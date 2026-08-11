@@ -171,6 +171,8 @@ mod tests {
         WriterPolicy::DrainUntilShutdown,
         &mut shutdown_listener,
       );
+
+      // Закрепить finish (future) в памяти
       tokio::pin!(finish);
 
       // Drain must keep waiting while neither the writer nor shutdown is ready.
