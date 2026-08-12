@@ -1,14 +1,26 @@
 use tokio::task::JoinError;
+use thiserror::Error;
 use crate::OutboundSendError;
 use crate::transport::protocol_reader::ReaderError;
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub(crate) enum SessionError {
-  Read(axum::Error),
+  #[error("failed to read from websocket: {0}")]
+  Read(#[source] axum::Error),
+
+  #[error("failed to enqueue outbound websocket message: {0:?}")]
   Outbound(OutboundSendError),
+
+  #[error("websocket writer stopped unexpectedly")]
   WriterStopped,
-  Write(axum::Error),
-  WriterTaskFailed(JoinError),
+
+  #[error("failed to write to websocket: {0}")]
+  Write(#[source] axum::Error),
+
+  #[error("websocket writer task failed: {0}")]
+  WriterTaskFailed(#[source] JoinError),
+
+  #[error("websocket writer drain timed out")]
   WriterDrainTimedOut
 }
 

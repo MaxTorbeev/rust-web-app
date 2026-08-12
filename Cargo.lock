@@ -1545,6 +1545,7 @@ dependencies = [
  "serde_repr",
  "sha2",
  "support",
+ "thiserror",
  "tokio",
  "tokio-tungstenite",
  "tracing",
