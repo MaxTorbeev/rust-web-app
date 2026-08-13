@@ -1,7 +1,3 @@
-use std::time::Duration;
-
-use async_nats::jetstream::stream::{Config as DriverStreamConfig, StorageType};
-
 use async_nats::jetstream::consumer::{
   AckPolicy,
   DeliverPolicy,
