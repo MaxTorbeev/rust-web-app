@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use crate::{ConnectError, ConsumerConfig, NatsConfig, PublishError, StreamConfig, StreamSetupError, SubscribeError, Subscription};
+use crate::{ConnectError, ConsumerConfig, NatsConfig, NatsSubscription, PublishError, StreamConfig, StreamSetupError, SubscribeError};
 
 pub struct NatsClient {
   /// Точка доступа ко всему JetStream api
@@ -44,7 +44,7 @@ impl NatsClient {
     Ok(())
   }
 
-  pub async fn subscribe(&self, config: &ConsumerConfig) -> Result<Subscription, SubscribeError> {
+  pub async fn subscribe(&self, config: &ConsumerConfig) -> Result<NatsSubscription, SubscribeError> {
     let stream = self.jetstream
       .get_stream(&config.stream_name)
       .await
@@ -63,6 +63,6 @@ impl NatsClient {
       .await
       .map_err(SubscribeError::messages)?;
 
-    Ok(Subscription::new(messages))
+    Ok(NatsSubscription::new(messages))
   }
 }
