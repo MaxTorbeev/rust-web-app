@@ -3,9 +3,6 @@ import {
   ArrowLeftIcon,
   LoaderCircleIcon,
   MessageCircleIcon,
-  MessagesSquareIcon,
-  RadioIcon,
-  UsersIcon,
 } from '@lucide/vue'
 import { computed, ref } from 'vue'
 import { Button } from '@/components/ui/button'
@@ -39,52 +36,13 @@ function showRoomStep(): void {
 
 <template>
   <div class="grid min-h-0 flex-1 md:grid-cols-[1fr_1.05fr]">
-    <section class="auth-visual relative hidden min-h-0 flex-col overflow-hidden border-r p-10 md:flex lg:p-14">
+    <section class="auth-visual relative hidden min-h-0 flex-col justify-center overflow-hidden border-r p-10 md:flex lg:p-14">
       <div class="flex items-center gap-3 text-xl font-semibold tracking-tight">
         <span class="grid size-10 place-items-center rounded-xl bg-primary text-primary-foreground">
           <MessageCircleIcon class="size-5" aria-hidden="true" />
         </span>
         Realtime Chat
       </div>
-
-      <div class="mt-16 max-w-md lg:mt-20">
-        <h1 class="text-4xl leading-tight font-semibold tracking-tight lg:text-5xl">
-          Общение, которое происходит <span class="text-primary">прямо сейчас</span>
-        </h1>
-        <p class="mt-5 text-base leading-relaxed text-muted-foreground">
-          Быстрые сообщения, присутствие участников и отдельные комнаты в одном простом интерфейсе.
-        </p>
-      </div>
-
-      <ul class="mt-auto grid gap-5 pt-10">
-        <li class="flex items-center gap-4">
-          <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-            <MessagesSquareIcon class="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <strong class="block text-sm font-semibold">Мгновенные сообщения</strong>
-            <small class="text-sm text-muted-foreground">Обновления без перезагрузки страницы</small>
-          </span>
-        </li>
-        <li class="flex items-center gap-4">
-          <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-            <UsersIcon class="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <strong class="block text-sm font-semibold">Участники онлайн</strong>
-            <small class="text-sm text-muted-foreground">Присутствие и индикатор набора текста</small>
-          </span>
-        </li>
-        <li class="flex items-center gap-4">
-          <span class="grid size-10 shrink-0 place-items-center rounded-xl bg-accent text-accent-foreground">
-            <RadioIcon class="size-5" aria-hidden="true" />
-          </span>
-          <span>
-            <strong class="block text-sm font-semibold">Отдельные комнаты</strong>
-            <small class="text-sm text-muted-foreground">Подключайтесь к существующим или создавайте новые</small>
-          </span>
-        </li>
-      </ul>
     </section>
 
     <section class="min-h-0 overflow-y-auto bg-card">
@@ -105,18 +63,17 @@ function showRoomStep(): void {
           <div class="space-y-2">
             <h2 class="text-3xl font-semibold tracking-tight">Добро пожаловать</h2>
             <p class="text-sm leading-relaxed text-muted-foreground">
-              Представьтесь, чтобы другие участники узнали вас в комнате.
+
             </p>
           </div>
 
           <label class="grid gap-2 text-sm font-medium">
-            <span>Ваше имя</span>
+            <span>Username</span>
             <Input
               v-model="form.displayName"
               class="h-11"
               autocomplete="name"
               maxlength="48"
-              placeholder="Как к вам обращаться"
               autofocus
               required
             />

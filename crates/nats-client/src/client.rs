@@ -1,5 +1,5 @@
 use bytes::Bytes;
-use crate::{ConnectError, NatsConfig, PublishError, StreamConfig, StreamSetupError};
+use crate::{ConnectError, ConsumerConfig, NatsConfig, PublishError, StreamConfig, StreamSetupError, SubscribeError, Subscription};
 
 pub struct NatsClient {
   /// Точка доступа ко всему JetStream api
@@ -17,11 +17,7 @@ impl NatsClient {
     Ok(Self { jetstream })
   }
 
-  pub async fn publish(
-    &self,
-    subject: impl Into<String>,
-    payload: Bytes
-  ) -> Result<(), PublishError> {
+  pub async fn publish(&self, subject: impl Into<String>, payload: Bytes) -> Result<(), PublishError> {
     // Отправили сообщение и получили future подтверждения
     let ack = self.jetstream
       .publish(subject.into(), payload)
@@ -46,5 +42,27 @@ impl NatsClient {
       .map_err(StreamSetupError::from_driver)?;
 
     Ok(())
+  }
+
+  pub async fn subscribe(&self, config: &ConsumerConfig) -> Result<Subscription, SubscribeError> {
+    let stream = self.jetstream
+      .get_stream(&config.stream_name)
+      .await
+      .map_err(SubscribeError::stream)?;
+
+    let consumer = stream
+      .get_or_create_consumer(
+        &config.durable_name,
+        config.to_driver_config(),
+      )
+      .await
+      .map_err(SubscribeError::consumer)?;
+
+    let messages = consumer
+      .messages()
+      .await
+      .map_err(SubscribeError::messages)?;
+
+    Ok(Subscription::new(messages))
   }
 }
