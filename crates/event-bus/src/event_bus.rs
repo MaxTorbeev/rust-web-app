@@ -14,6 +14,7 @@ pub trait Event: Clone
 + DeserializeOwned
 + 'static {
   const NAME: &'static str;
+  const VERSION: u16 = 1;
 }
 
 #[derive(Clone, Debug)]
@@ -91,4 +92,3 @@ impl EventBus {
     Ok(ListenerHandle::new(inner))
   }
 }
-
