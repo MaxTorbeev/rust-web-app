@@ -16,13 +16,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let auth = Arc::new(AuthConfig::from_env()?);
 
-    let event_bus = Arc::new(EventBus::new().await?);
+    let mut event_bus = EventBus::new();
+
+    listeners::register(&mut event_bus)?;
+
+    let event_bus = Arc::new(event_bus);
 
     let realtime_config = RealtimeConfig::from_env();
 
     let realtime = Arc::new(Realtime::from_config(realtime_config?));
-
-    listeners::register(event_bus.clone()).await?;
 
     let app_state = state::AppState::new(
         redis,

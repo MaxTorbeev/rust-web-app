@@ -1,14 +1,14 @@
-use std::fmt::Debug;
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
 use std::future::Future;
+use std::pin::Pin;
+
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use tokio_events::EventBusBuilder;
-use crate::event_bus_error::EventBusError;
-use crate::{ListenerHandle};
 
-pub trait Event: Clone
-+ Debug
-+ Send
+use crate::EventBusError;
+
+pub trait Event: Send
 + Sync
 + Serialize
 + DeserializeOwned
@@ -17,78 +17,65 @@ pub trait Event: Clone
   const VERSION: u16 = 1;
 }
 
-#[derive(Clone, Debug)]
-struct TokioEventEnvelope<E: Event> {
-  event: E,
-}
+type EventHandlerFuture = Pin<
+  Box<dyn Future<Output = Result<(), EventBusError>> + Send>
+>;
+type EventHandler = Box<
+  dyn Fn(Box<dyn Any + Send>) -> EventHandlerFuture + Send + Sync
+>;
 
+#[derive(Default)]
 pub struct EventBus {
-  inner: tokio_events::bus::EventBus,
-}
-
-impl<E> tokio_events::Event for TokioEventEnvelope<E>
-where
-  E: Event,
-{
-  fn event_type() -> &'static str {
-    E::NAME
-  }
-
-  fn serialize_event(&self) -> tokio_events::Result<Vec<u8>> {
-    serde_json::to_vec(&self.event)
-      .map_err(|e| tokio_events::Error::SerializationError(e.to_string()))
-  }
-
-  fn deserialize_event(bytes: &[u8]) -> tokio_events::Result<Self> {
-    let event: E = serde_json::from_slice(&bytes)
-      .map_err(|e| tokio_events::Error::SerializationError(e.to_string()))?;
-
-    Ok(Self { event })
-  }
+  handlers: HashMap<TypeId, EventHandler>,
 }
 
 impl EventBus {
-  pub async fn new() -> Result<Self, EventBusError> {
-    let inner = EventBusBuilder::new()
-      .build()
-      .await?;
-
-    Ok(Self { inner })
+  pub fn new() -> Self {
+    Self::default()
   }
 
-  pub async fn publish<E>(&self, event: E) -> Result<(), EventBusError> where E: Event {
-    self.inner.publish(TokioEventEnvelope {event}).await?;
-
-    Ok(())
-  }
-
-  pub async fn emit<E>(&self, event: E) where E: Event {
-    if let Err(e) = self.publish(event).await {
-      tracing::error!(event = E::NAME, %e, "Failed to publish event");
-    }
-  }
-
-  pub async fn listen<E, F, Fut>(&self, handler: F) -> Result<(), EventBusError>
-  where E: Event,
-        F: Fn(E) -> Fut + Send + Sync + 'static,
-        Fut: Future<Output = ()> + Send + 'static
-  {
-    let handle = self.subscribe(handler).await?;
-
-    handle.detach();
-
-    Ok(())
-  }
-
-  pub async fn subscribe<E, F, Fut>(&self, handler: F) -> Result<ListenerHandle, EventBusError>
+  /// Registers the single handler responsible for an event type.
+  ///
+  /// All handlers are registered before the bus is shared with the application.
+  pub fn register<E, F, Fut>(&mut self, handler: F) -> Result<(), EventBusError>
   where
     E: Event,
     F: Fn(E) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output=()> + Send + 'static,
+    Fut: Future<Output = Result<(), EventBusError>> + Send + 'static,
   {
-    let inner = self.inner.subscribe(move |envelope: TokioEventEnvelope<E>| { handler(envelope.event) })
-      .await?;
+    let event_type = TypeId::of::<E>();
 
-    Ok(ListenerHandle::new(inner))
+    if self.handlers.contains_key(&event_type) {
+      return Err(EventBusError::HandlerAlreadyRegistered {
+        event_name: E::NAME,
+      });
+    }
+
+    self.handlers.insert(
+      event_type,
+      Box::new(move |event| {
+        let event = event
+          .downcast::<E>()
+          .expect("event type must match its registered handler");
+
+        Box::pin(handler(*event))
+      }),
+    );
+
+    Ok(())
+  }
+
+  /// Runs the local handler and returns only after it has completed.
+  pub async fn publish<E>(&self, event: E) -> Result<(), EventBusError>
+  where
+    E: Event,
+  {
+    let handler = self.handlers
+      .get(&TypeId::of::<E>())
+      .ok_or(EventBusError::HandlerNotRegistered {
+        event_name: E::NAME,
+      })?;
+
+    handler(Box::new(event)).await
   }
 }

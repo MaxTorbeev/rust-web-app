@@ -8,7 +8,7 @@ use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use axum::extract::ws::WebSocketUpgrade;
 use axum::routing::any;
 use axum::Router;
-use event_bus::{Event, EventBus, ListenerHandle};
+use event_bus::{Event, EventBus};
 use futures_util::{SinkExt, StreamExt};
 use realtime::{
   ApplicationId,
@@ -87,23 +87,16 @@ async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
 struct LifecycleEvents {
   connected: UnboundedReceiver<WebsocketConnected>,
   disconnected: UnboundedReceiver<WebsocketDisconnected>,
-  _subscriptions: [ListenerHandle; 2],
 }
 
 impl LifecycleEvents {
-  async fn subscribe(event_bus: &EventBus) -> Self {
-    let (connected_subscription, connected) =
-      subscribe_to::<WebsocketConnected>(event_bus).await;
-    let (disconnected_subscription, disconnected) =
-      subscribe_to::<WebsocketDisconnected>(event_bus).await;
+  fn register(event_bus: &mut EventBus) -> Self {
+    let connected = register_handler::<WebsocketConnected>(event_bus);
+    let disconnected = register_handler::<WebsocketDisconnected>(event_bus);
 
     Self {
       connected,
       disconnected,
-      _subscriptions: [
-        connected_subscription,
-        disconnected_subscription,
-      ],
     }
   }
 
@@ -152,12 +145,9 @@ struct TestSession {
 
 impl TestSession {
   async fn connect() -> Self {
-    let event_bus = Arc::new(
-      EventBus::new()
-        .await
-        .expect("test event bus must start"),
-    );
-    let events = LifecycleEvents::subscribe(&event_bus).await;
+    let mut event_bus = EventBus::new();
+    let events = LifecycleEvents::register(&mut event_bus);
+    let event_bus = Arc::new(event_bus);
     let application = test_application();
     let connection = application.create_connection(test_authorization());
     let connection_id = connection.id.clone();
@@ -257,22 +247,23 @@ impl Drop for TestSession {
   }
 }
 
-async fn subscribe_to<E: Event>(
-  event_bus: &EventBus,
-) -> (ListenerHandle, UnboundedReceiver<E>) {
+fn register_handler<E: Event>(
+  event_bus: &mut EventBus,
+) -> UnboundedReceiver<E> {
   let (sender, receiver) = mpsc::unbounded_channel();
-  let subscription = event_bus
-    .subscribe(move |event: E| {
+  event_bus
+    .register(move |event: E| {
       let sender = sender.clone();
 
       async move {
         let _ = sender.send(event);
+
+        Ok(())
       }
     })
-    .await
-    .expect("lifecycle listener must subscribe");
+    .expect("lifecycle handler must register");
 
-  (subscription, receiver)
+  receiver
 }
 
 async fn receive_event<E>(
