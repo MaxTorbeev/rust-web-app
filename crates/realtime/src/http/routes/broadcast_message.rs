@@ -25,9 +25,16 @@ pub async fn broadcast_message(
     messages,
   );
 
-  let sent = application.channel_hub
+  let outcome = application.channel_hub
     .broadcast(&channel, protocol_message)
-    .await;
+    .await
+    .map_err(|error| {
+      tracing::error!(%error, %channel, "failed to broadcast HTTP message");
 
-  Ok(ApiResponse::new(BroadcastMessageResponse { sent }))
+      ApiError::internal("failed to broadcast message")
+    })?;
+
+  Ok(ApiResponse::new(BroadcastMessageResponse {
+    sent: outcome.enqueued,
+  }))
 }

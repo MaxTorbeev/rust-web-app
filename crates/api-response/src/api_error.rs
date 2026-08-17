@@ -9,6 +9,13 @@ pub struct ApiError {
 }
 
 impl ApiError {
+  pub fn internal(message: &str) -> Self {
+    Self {
+      status: StatusCode::INTERNAL_SERVER_ERROR,
+      message: message.to_owned(),
+    }
+  }
+
   pub fn unauthorized(message: &str) -> Self {
     Self {
       status: StatusCode::UNAUTHORIZED,

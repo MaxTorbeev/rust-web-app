@@ -1,6 +1,14 @@
 use std::collections::{HashMap, HashSet};
-use tokio::sync::{RwLock};
-use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage};
+use tokio::sync::RwLock;
+use crate::{
+  BroadcastError,
+  BroadcastOutcome,
+  ConnectionId,
+  OutboundSendError,
+  OutboundSender,
+  PreparedFrame,
+  ProtocolMessage,
+};
 
 /// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
 /// can enqueue ProtocolMessage values without owning the WebSocket itself.
@@ -52,7 +60,11 @@ impl ChannelHub {
 
   /// Broadcasts a protocol message to all local connections attached to a channel.
   /// Dead connections are detached from the channel.
-  pub async fn broadcast(&self, channel: &str, message: ProtocolMessage) -> usize {
+  pub async fn broadcast(
+    &self,
+    channel: &str,
+    message: ProtocolMessage,
+  ) -> Result<BroadcastOutcome, BroadcastError> {
     let targets = {
       let state = self.state.read().await;
 
@@ -68,25 +80,18 @@ impl ChannelHub {
     };
 
     if targets.is_empty() {
-      return 0;
+      return Ok(BroadcastOutcome::default());
     }
 
-    let frame = match PreparedFrame::try_from(&message) {
-      Ok(frame) => frame,
-      Err(error) => {
-        tracing::error!(%error, %channel, "failed to prepare broadcast frame");
+    let frame = PreparedFrame::try_from(&message)?;
 
-        return 0;
-      }
-    };
-
-    let mut sent = 0;
+    let mut enqueued = 0;
     let mut connections_to_disconnect = Vec::new();
 
     for (connection_id, sender) in targets {
       match sender.try_enqueue_prepared_frame(frame.clone()) {
         Ok(()) => {
-          sent += 1;
+          enqueued += 1;
         }
 
         Err(OutboundSendError::QueueFull) => {
@@ -110,11 +115,16 @@ impl ChannelHub {
       }
     }
 
+    let disconnected = connections_to_disconnect.len();
+
     for connection_id in connections_to_disconnect {
       self.disconnect(&connection_id).await;
     }
 
-    sent
+    Ok(BroadcastOutcome {
+      enqueued,
+      disconnected,
+    })
   }
 
   /// Removes a local WebSocket connection from all attached channels.
@@ -225,6 +235,16 @@ mod tests {
   }
 
   #[tokio::test(flavor = "current_thread")]
+  async fn no_recipients_is_a_successful_broadcast() {
+    let outcome = ChannelHub::new()
+      .broadcast(CHANNEL_A, ProtocolMessage::heartbeat())
+      .await
+      .expect("broadcast without recipients must succeed");
+
+    assert_eq!(outcome, BroadcastOutcome::default());
+  }
+
+  #[tokio::test(flavor = "current_thread")]
   async fn full_recipient_does_not_block_healthy_recipient() {
     let hub = ChannelHub::new();
     let slow_connection_id = ConnectionId::generate();
@@ -244,14 +264,22 @@ mod tests {
     hub.attach(CHANNEL_B, slow_connection_id.clone(), slow_sender).await;
     hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
 
-    let sent = timeout(
+    let outcome = timeout(
       TEST_TIMEOUT,
       hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
     )
       .await
-      .expect("a full recipient must not block broadcast");
+      .expect("a full recipient must not block broadcast")
+      .expect("broadcast frame must serialize");
 
-    assert_eq!(sent, 1, "only the healthy queue must accept the frame");
+    assert_eq!(
+      outcome,
+      BroadcastOutcome {
+        enqueued: 1,
+        disconnected: 1,
+      },
+      "only the healthy queue must accept the frame",
+    );
 
     let healthy_frame = timeout(TEST_TIMEOUT, healthy_receiver.recv())
       .await
@@ -287,14 +315,22 @@ mod tests {
     hub.attach(CHANNEL_B, closed_connection_id.clone(), closed_sender).await;
     hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
 
-    let sent = timeout(
+    let outcome = timeout(
       TEST_TIMEOUT,
       hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
     )
       .await
-      .expect("a closed recipient must not block broadcast");
+      .expect("a closed recipient must not block broadcast")
+      .expect("broadcast frame must serialize");
 
-    assert_eq!(sent, 1, "only the healthy queue must accept the frame");
+    assert_eq!(
+      outcome,
+      BroadcastOutcome {
+        enqueued: 1,
+        disconnected: 1,
+      },
+      "only the healthy queue must accept the frame",
+    );
 
     let healthy_frame = timeout(TEST_TIMEOUT, healthy_receiver.recv())
       .await

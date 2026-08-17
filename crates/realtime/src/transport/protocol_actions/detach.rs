@@ -15,12 +15,15 @@ pub async fn detach(message: ProtocolMessage, context: &SocketContext<'_>) -> Pr
         .await;
 
       if let Some(presence) = leave {
-        context
+        if let Err(error) = context
           .channel_hub
           .broadcast(
             channel,
             ProtocolMessage::presence(channel, vec![presence]),
-          ).await;
+          ).await
+        {
+          tracing::error!(%error, %channel, "failed to broadcast presence leave");
+        }
       }
 
       ProtocolMessage::detached(&message)

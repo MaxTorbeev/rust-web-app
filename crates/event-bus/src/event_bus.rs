@@ -45,6 +45,7 @@ impl EventBus {
   {
     let event_type = TypeId::of::<E>();
 
+    // Проверить hashmap на наличие дубликатов
     if self.handlers.contains_key(&event_type) {
       return Err(EventBusError::HandlerAlreadyRegistered {
         event_name: E::NAME,
@@ -55,6 +56,7 @@ impl EventBus {
       event_type,
       Box::new(move |event| {
         let event = event
+          // Вернуть event исходный тип.
           .downcast::<E>()
           .expect("event type must match its registered handler");
 

@@ -48,7 +48,7 @@ impl RealtimeApplication {
       .await;
 
     for (channel, presence) in leaves {
-      self
+      if let Err(error) = self
         .channel_hub
         .broadcast(
           &channel,
@@ -57,7 +57,10 @@ impl RealtimeApplication {
             vec![presence],
           ),
         )
-        .await;
+        .await
+      {
+        tracing::error!(%error, %channel, "failed to broadcast disconnected presence leave");
+      }
     }
   }
 }

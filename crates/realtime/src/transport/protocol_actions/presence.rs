@@ -34,10 +34,13 @@ pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> 
         if changed_presence.is_empty() {
           ProtocolMessage::nack(message.msg_serial)
         } else {
-          context
+          if let Err(error) = context
             .channel_hub
             .broadcast(channel, ProtocolMessage::presence(channel, changed_presence))
-            .await;
+            .await
+          {
+            tracing::error!(%error, %channel, "failed to broadcast presence change");
+          }
 
           ProtocolMessage::ack(&message)
         }
