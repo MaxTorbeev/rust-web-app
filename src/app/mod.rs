@@ -1,37 +1,26 @@
 use std::sync::Arc;
+
+use crate::app::config::HttpConfig;
 use auth::AuthConfig;
-use event_bus::EventBus;
-use realtime::{Realtime, RealtimeConfig};
-use crate::app::config::{HttpConfig};
+use event_bus::{EventBus, EventBusError};
+use realtime::{register_event_handlers, Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
 
-mod http;
-mod state;
 mod config;
-
+mod http;
 mod listeners;
+mod state;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     let redis = Arc::new(RedisClient::connect(&RedisConfig::default()).await?);
 
     let auth = Arc::new(AuthConfig::from_env()?);
 
-    let mut event_bus = EventBus::new();
+    let realtime = Arc::new(Realtime::from_config(RealtimeConfig::from_env()?));
 
-    listeners::register(&mut event_bus)?;
+    let event_bus = build_event_bus(Arc::clone(&realtime))?;
 
-    let event_bus = Arc::new(event_bus);
-
-    let realtime_config = RealtimeConfig::from_env();
-
-    let realtime = Arc::new(Realtime::from_config(realtime_config?));
-
-    let app_state = state::AppState::new(
-        redis,
-        auth,
-        event_bus,
-        realtime
-    );
+    let app_state = state::AppState::new(redis, auth, event_bus, realtime);
 
     let routes = http::routes::init(app_state);
 
@@ -41,4 +30,15 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, routes).await?;
 
     Ok(())
+}
+
+fn build_event_bus(
+    realtime: Arc<Realtime>,
+) -> Result<Arc<EventBus>, EventBusError> {
+    let mut event_bus = EventBus::new();
+
+    listeners::register(&mut event_bus)?;
+    register_event_handlers(&mut event_bus, realtime)?;
+
+    Ok(Arc::new(event_bus))
 }

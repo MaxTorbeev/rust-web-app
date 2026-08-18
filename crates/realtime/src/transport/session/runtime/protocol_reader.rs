@@ -5,6 +5,7 @@ use crate::{Connection, OutboundSendError, OutboundSender, ProtocolMessage, Real
 use crate::transport::{handle_protocol_message, ProtocolOutcome, SocketContext};
 use axum::extract::ws::{Message};
 use futures_util::StreamExt;
+use event_bus::EventBus;
 
 pub(crate) type ReaderResult = Result<ReaderEndReason, ReaderError>;
 
@@ -38,6 +39,7 @@ impl ProtocolReader {
     sender: &OutboundSender,
     connection: &Connection,
     application: &RealtimeApplication,
+    event_bus: &EventBus,
   ) -> ReaderResult {
     while let Some(result) = self.stream.next().await {
       let frame = match result {
@@ -73,6 +75,7 @@ impl ProtocolReader {
             sender: &sender,
             presence_hub: &application.presence_hub,
             channel_hub: &application.channel_hub,
+            event_bus,
           };
 
           let ProtocolOutcome {

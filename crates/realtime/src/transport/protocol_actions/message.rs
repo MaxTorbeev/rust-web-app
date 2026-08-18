@@ -1,4 +1,4 @@
-use crate::ProtocolMessage;
+use crate::{ChannelMessagePublished, ProtocolMessage};
 use crate::transport::SocketContext;
 
 pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
@@ -7,14 +7,18 @@ pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> P
       // TODO(security): WARNING: publishing is not checked against token capability.
       // Require `publish` permission for this channel before broadcasting.
       let result = context
-        .channel_hub
-        .broadcast(channel, message.clone())
+        .event_bus
+        .publish(ChannelMessagePublished {
+          application_id: context.connection.application_id().clone(),
+          channel: channel.to_owned(),
+          messages: message.messages.clone().unwrap_or_default(),
+        })
         .await;
 
       match result {
         Ok(_) => ProtocolMessage::ack(&message),
         Err(error) => {
-          tracing::error!(%error, %channel, "failed to broadcast channel message");
+          tracing::error!(%error, %channel, "failed to publish channel message event");
 
           ProtocolMessage::nack(message.msg_serial)
         }

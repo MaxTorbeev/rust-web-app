@@ -38,10 +38,28 @@ pub enum EventBusError {
     #[source]
     Box<dyn std::error::Error + Send + Sync>,
   ),
+
+  #[error("handler for event {event_name} failed: {source}")]
+  Handler {
+    event_name: &'static str,
+
+    #[source]
+    source: Box<dyn std::error::Error + Send + Sync>,
+  },
 }
 
 impl EventBusError {
   pub fn publisher(error: impl std::error::Error + Send + Sync + 'static) -> Self {
     Self::Publisher(Box::new(error))
+  }
+
+  pub fn handler(
+    event_name: &'static str,
+    error: impl std::error::Error + Send + Sync + 'static,
+  ) -> Self {
+    Self::Handler {
+      event_name,
+      source: Box::new(error),
+    }
   }
 }

@@ -4,20 +4,23 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
+use auth::VerifiedToken;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::routing::any;
 use axum::Router;
 use event_bus::{Event, EventBus};
 use futures_util::{SinkExt, StreamExt};
 use realtime::{
+  register_event_handlers,
   ApplicationId,
   Connection,
   ConnectionId,
   PresenceAction,
   ProtocolAction,
   ProtocolMessage,
+  Realtime,
   RealtimeApplication,
+  RealtimeConfig,
   WebsocketConnected,
   WebsocketDisconnected,
 };
@@ -81,6 +84,49 @@ async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
   assert!(!session.is_attached(CHANNEL).await);
   assert_eq!(session.presence_count(CHANNEL).await, 0);
   session.events.expect_no_more_events().await;
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn channel_message_is_broadcast_and_acknowledged() {
+  let mut session = TestSession::connect().await;
+  let connection_id = session.connection_id.clone();
+
+  session.expect_action(ProtocolAction::Connected).await;
+  session.events.expect_connected(&connection_id).await;
+
+  session.send(json!({
+    "action": ProtocolAction::Attach,
+    "channel": CHANNEL,
+  })).await;
+  session.expect_action(ProtocolAction::Attached).await;
+  session.expect_action(ProtocolAction::Sync).await;
+
+  session.send(json!({
+    "action": ProtocolAction::Message,
+    "channel": CHANNEL,
+    "msgSerial": 7,
+    "messages": [{
+      "name": "chat.message",
+      "data": { "text": "hello" },
+    }],
+  })).await;
+
+  let published = session
+    .expect_action(ProtocolAction::Message)
+    .await;
+  assert_eq!(published.channel.as_deref(), Some(CHANNEL));
+  assert_eq!(published.msg_serial, None);
+
+  let messages = published
+    .messages
+    .expect("broadcast must preserve published messages");
+  assert_eq!(messages.len(), 1);
+  assert_eq!(messages[0].name.as_deref(), Some("chat.message"));
+  assert_eq!(messages[0].data, json!({ "text": "hello" }));
+
+  let ack = session.expect_action(ProtocolAction::Ack).await;
+  assert_eq!(ack.msg_serial, Some(7));
+  assert_eq!(ack.count, Some(1));
 }
 
 /// Собирает lifecycle events отдельно от сообщений WebSocket-протокола.
@@ -147,8 +193,15 @@ impl TestSession {
   async fn connect() -> Self {
     let mut event_bus = EventBus::new();
     let events = LifecycleEvents::register(&mut event_bus);
+    let realtime = test_realtime();
+    let application = realtime
+      .application(&test_application_id())
+      .expect("test realtime application must exist");
+
+    register_event_handlers(&mut event_bus, realtime)
+      .expect("realtime event handlers must register");
+
     let event_bus = Arc::new(event_bus);
-    let application = test_application();
     let connection = application.create_connection(test_authorization());
     let connection_id = connection.id.clone();
     let router = single_connection_router(
@@ -308,12 +361,16 @@ fn single_connection_router(
   )
 }
 
-fn test_application() -> Arc<RealtimeApplication> {
-  Arc::new(RealtimeApplication::new(
-    ApplicationId::new("application-1"),
-    TokenAccessIssuer::new("test-key", b"test-secret"),
-    TokenAccessVerifier::new("test-key", b"test-secret"),
-  ))
+fn test_application_id() -> ApplicationId {
+  ApplicationId::new("application-1")
+}
+
+fn test_realtime() -> Arc<Realtime> {
+  Arc::new(Realtime::from_config(RealtimeConfig {
+    application_id: test_application_id(),
+    key_name: "application-1.test-key".to_owned(),
+    key_secret: "test-secret".to_owned(),
+  }))
 }
 
 fn test_authorization() -> VerifiedToken {

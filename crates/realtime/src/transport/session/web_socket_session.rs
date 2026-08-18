@@ -3,6 +3,7 @@ use axum::extract::ws::WebSocket;
 use futures_util::StreamExt;
 use tokio::sync::{mpsc};
 use tokio::sync::mpsc::Receiver;
+use event_bus::EventBus;
 use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, RealtimeApplication};
 use crate::transport::{shutdown_channel, EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy, SessionError};
 use crate::transport::protocol_reader::ProtocolReader;
@@ -17,6 +18,7 @@ pub struct WebSocketSession {
   reader: ProtocolReader,
   writer: WebSocketWriter,
   heartbeat: Option<Heartbeat>,
+  event_bus: Arc<EventBus>,
 }
 
 impl WebSocketSession {
@@ -24,6 +26,7 @@ impl WebSocketSession {
     socket: WebSocket,
     connection: Connection,
     application: Arc<RealtimeApplication>,
+    event_bus: Arc<EventBus>,
   ) -> Self {
     let (
       websocket_sender,
@@ -47,6 +50,7 @@ impl WebSocketSession {
       reader,
       writer,
       heartbeat: None,
+      event_bus
     }
   }
 
@@ -140,7 +144,8 @@ impl WebSocketSession {
       reader_result = self.reader.run(
         &self.sender,
         &self.connection,
-        self.application.as_ref()
+        self.application.as_ref(),
+        self.event_bus.as_ref()
       ) => reader_result.into(),
 
       true = self.shutdown_listener.requested() => {

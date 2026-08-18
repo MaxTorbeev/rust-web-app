@@ -49,7 +49,12 @@ async fn run_socket(
     })
     .await?;
 
-  let session_result = WebSocketSession::new(socket, connection, application)
+  let session_result = WebSocketSession::new(
+    socket,
+    connection,
+    application,
+    event_bus.clone(),
+  )
     .run()
     .await;
 
