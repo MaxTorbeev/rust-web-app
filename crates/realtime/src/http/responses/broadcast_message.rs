@@ -1,6 +1,9 @@
 use serde::Serialize;
+use uuid::Uuid;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct BroadcastMessageResponse {
-  pub sent: usize
+  pub accepted: bool,
+  pub sent: Uuid
 }

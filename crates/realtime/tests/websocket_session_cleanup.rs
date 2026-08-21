@@ -8,7 +8,16 @@ use auth::VerifiedToken;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::routing::any;
 use axum::Router;
-use event_bus::{Event, EventBus};
+use event_bus::{
+  DeliveryClass,
+  Event,
+  EventBus,
+  EventBusError,
+  EventDispatcher,
+  EventMessage,
+  EventPublishFuture,
+  EventPublisher,
+};
 use futures_util::{SinkExt, StreamExt};
 use realtime::{
   register_event_handlers,
@@ -129,6 +138,48 @@ async fn channel_message_is_broadcast_and_acknowledged() {
   assert_eq!(ack.count, Some(1));
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn channel_message_publish_failure_returns_nack() {
+  let publisher: Arc<dyn EventPublisher> =
+    Arc::new(FailingDistributedPublisher);
+  let mut session =
+    TestSession::connect_with_distributed_publisher(publisher).await;
+  let connection_id = session.connection_id.clone();
+
+  session.expect_action(ProtocolAction::Connected).await;
+  session.events.expect_connected(&connection_id).await;
+
+  session.send(json!({
+    "action": ProtocolAction::Message,
+    "channel": CHANNEL,
+    "msgSerial": 9,
+    "messages": [{
+      "name": "chat.message",
+      "data": { "text": "not published" },
+    }],
+  })).await;
+
+  let nack = session.expect_action(ProtocolAction::Nack).await;
+  assert_eq!(nack.msg_serial, Some(9));
+  assert_eq!(nack.count, Some(1));
+}
+
+struct FailingDistributedPublisher;
+
+impl EventPublisher for FailingDistributedPublisher {
+  fn publish<'a>(
+    &'a self,
+    _message: &'a EventMessage,
+    _delivery: DeliveryClass,
+  ) -> EventPublishFuture<'a> {
+    Box::pin(async {
+      Err(EventBusError::publisher(std::io::Error::other(
+        "test publisher failure",
+      )))
+    })
+  }
+}
+
 /// Собирает lifecycle events отдельно от сообщений WebSocket-протокола.
 struct LifecycleEvents {
   connected: UnboundedReceiver<WebsocketConnected>,
@@ -136,9 +187,9 @@ struct LifecycleEvents {
 }
 
 impl LifecycleEvents {
-  fn register(event_bus: &mut EventBus) -> Self {
-    let connected = register_handler::<WebsocketConnected>(event_bus);
-    let disconnected = register_handler::<WebsocketDisconnected>(event_bus);
+  fn register(dispatcher: &mut EventDispatcher) -> Self {
+    let connected = register_handler::<WebsocketConnected>(dispatcher);
+    let disconnected = register_handler::<WebsocketDisconnected>(dispatcher);
 
     Self {
       connected,
@@ -191,17 +242,31 @@ struct TestSession {
 
 impl TestSession {
   async fn connect() -> Self {
-    let mut event_bus = EventBus::new();
-    let events = LifecycleEvents::register(&mut event_bus);
+    Self::connect_with(|dispatcher| EventBus::local(dispatcher)).await
+  }
+
+  async fn connect_with_distributed_publisher(
+    publisher: Arc<dyn EventPublisher>,
+  ) -> Self {
+    Self::connect_with(move |dispatcher| {
+      EventBus::with_distributed_publisher(dispatcher, publisher)
+    }).await
+  }
+
+  async fn connect_with(
+    build_event_bus: impl FnOnce(Arc<EventDispatcher>) -> EventBus,
+  ) -> Self {
+    let mut dispatcher = EventDispatcher::new();
+    let events = LifecycleEvents::register(&mut dispatcher);
     let realtime = test_realtime();
     let application = realtime
       .application(&test_application_id())
       .expect("test realtime application must exist");
 
-    register_event_handlers(&mut event_bus, realtime)
+    register_event_handlers(&mut dispatcher, realtime)
       .expect("realtime event handlers must register");
 
-    let event_bus = Arc::new(event_bus);
+    let event_bus = Arc::new(build_event_bus(Arc::new(dispatcher)));
     let connection = application.create_connection(test_authorization());
     let connection_id = connection.id.clone();
     let router = single_connection_router(
@@ -301,10 +366,10 @@ impl Drop for TestSession {
 }
 
 fn register_handler<E: Event>(
-  event_bus: &mut EventBus,
+  dispatcher: &mut EventDispatcher,
 ) -> UnboundedReceiver<E> {
   let (sender, receiver) = mpsc::unbounded_channel();
-  event_bus
+  dispatcher
     .register(move |event: E| {
       let sender = sender.clone();
 
@@ -378,7 +443,7 @@ fn test_authorization() -> VerifiedToken {
     client_id: Some("client-123".to_owned()),
     issued_at: 1,
     expires_at: 2,
-    capability: r#"{"*": ["subscribe", "presence"]}"#
+    capability: r#"{"*": ["subscribe", "presence", "publish"]}"#
       .parse()
       .expect("test capability must be valid"),
   }

@@ -1,83 +1,54 @@
-use std::any::{Any, TypeId};
-use std::collections::HashMap;
-use std::future::Future;
-use std::pin::Pin;
+use std::sync::Arc;
 
-use serde::de::DeserializeOwned;
-use serde::Serialize;
+use crate::{
+    DeliveryClass, Event, EventBusError, EventDispatcher, EventMessage, EventPublisher,
+    LocalEventPublisher, PublishReceipt,
+};
 
-use crate::EventBusError;
-
-pub trait Event: Send
-+ Sync
-+ Serialize
-+ DeserializeOwned
-+ 'static {
-  const NAME: &'static str;
-  const VERSION: u16 = 1;
-}
-
-type EventHandlerFuture = Pin<
-  Box<dyn Future<Output = Result<(), EventBusError>> + Send>
->;
-type EventHandler = Box<
-  dyn Fn(Box<dyn Any + Send>) -> EventHandlerFuture + Send + Sync
->;
-
-#[derive(Default)]
 pub struct EventBus {
-  handlers: HashMap<TypeId, EventHandler>,
+    local_publisher: Arc<dyn EventPublisher>,
+    distributed_publisher: Arc<dyn EventPublisher>,
 }
 
 impl EventBus {
-  pub fn new() -> Self {
-    Self::default()
-  }
+    /// Creates a bus that applies every delivery class in the current process.
+    pub fn local(dispatcher: Arc<EventDispatcher>) -> Self {
+        let publisher: Arc<dyn EventPublisher> = Arc::new(LocalEventPublisher::new(dispatcher));
 
-  /// Registers the single handler responsible for an event type.
-  ///
-  /// All handlers are registered before the bus is shared with the application.
-  pub fn register<E, F, Fut>(&mut self, handler: F) -> Result<(), EventBusError>
-  where
-    E: Event,
-    F: Fn(E) -> Fut + Send + Sync + 'static,
-    Fut: Future<Output = Result<(), EventBusError>> + Send + 'static,
-  {
-    let event_type = TypeId::of::<E>();
-
-    // Проверить hashmap на наличие дубликатов
-    if self.handlers.contains_key(&event_type) {
-      return Err(EventBusError::HandlerAlreadyRegistered {
-        event_name: E::NAME,
-      });
+        Self {
+            local_publisher: Arc::clone(&publisher),
+            distributed_publisher: publisher,
+        }
     }
 
-    self.handlers.insert(
-      event_type,
-      Box::new(move |event| {
-        let event = event
-          // Вернуть event исходный тип.
-          .downcast::<E>()
-          .expect("event type must match its registered handler");
+    /// Creates a bus that applies local events inline and sends distributed
+    /// events through the configured transport publisher.
+    pub fn with_distributed_publisher(
+        dispatcher: Arc<EventDispatcher>,
+        distributed_publisher: Arc<dyn EventPublisher>,
+    ) -> Self {
+        let local_publisher: Arc<dyn EventPublisher> = Arc::new(LocalEventPublisher::new(dispatcher));
 
-        Box::pin(handler(*event))
-      }),
-    );
+        Self {
+            local_publisher,
+            distributed_publisher,
+        }
+    }
 
-    Ok(())
-  }
+    /// Creates one transport-independent message and publishes it according to
+    /// the event's delivery class.
+    pub async fn publish<E>(&self, event: E) -> Result<PublishReceipt, EventBusError>
+    where
+        E: Event,
+    {
+        let message = EventMessage::try_from_event(&event)?;
+        let publisher = match E::DELIVERY {
+            DeliveryClass::LocalOnly => &self.local_publisher,
+            DeliveryClass::AllNodes | DeliveryClass::WorkQueue => &self.distributed_publisher,
+        };
 
-  /// Runs the local handler and returns only after it has completed.
-  pub async fn publish<E>(&self, event: E) -> Result<(), EventBusError>
-  where
-    E: Event,
-  {
-    let handler = self.handlers
-      .get(&TypeId::of::<E>())
-      .ok_or(EventBusError::HandlerNotRegistered {
-        event_name: E::NAME,
-      })?;
+        publisher.publish(&message, E::DELIVERY).await?;
 
-    handler(Box::new(event)).await
-  }
+        Ok(PublishReceipt::new(message.event_id()))
+    }
 }

@@ -7,5 +7,5 @@ pub struct WebsocketDisconnected {
 }
 
 impl Event for WebsocketDisconnected {
-  const NAME: &'static str = "realtime.websocket_diconnected";
+  const NAME: &'static str = "realtime.websocket_disconnected";
 }
