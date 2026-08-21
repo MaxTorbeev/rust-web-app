@@ -2,7 +2,7 @@ use std::sync::Arc;
 use axum::extract::{Path, State};
 use api_response::{ApiError, ApiResponse};
 use event_bus::EventBus;
-use crate::{ChannelMessagePublished, Message};
+use crate::{ChannelMessageSubmitted, Message};
 use crate::extractors::{BroadcastApplication, BroadcastMessages};
 use crate::responses::BroadcastMessageResponse;
 
@@ -24,24 +24,20 @@ pub async fn broadcast_message(
     .collect();
 
   let receipt = event_bus
-    .publish(ChannelMessagePublished {
+    .publish(ChannelMessageSubmitted {
       application_id: application.id.clone(),
       channel: channel.clone(),
       messages,
     })
     .await
-    .map_err(|error| {
-      tracing::error!(
-      %error,
-      %channel,
-      "failed to publish HTTP broadcast event"
-    );
+    .map_err(|e| {
+      tracing::error!(%e, %channel, "failed to publish HTTP broadcast event");
 
       ApiError::internal("failed to broadcast message")
     })?;
 
   Ok(ApiResponse::new(BroadcastMessageResponse {
     accepted: true,
-    sent: receipt.event_id,
+    event_id: receipt.event_id,
   }))
 }

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use event_bus::{Event, EventBusError, EventDispatcher};
 use thiserror::Error;
 
-use crate::{ChannelMessagePublished, ProtocolMessage, Realtime};
+use crate::{ChannelMessageSubmitted, ProtocolMessage, Realtime};
 
 #[derive(Debug, Error)]
 #[error("realtime application `{application_id}` is not registered")]
@@ -15,7 +15,7 @@ pub(super) fn register(
   dispatcher: &mut EventDispatcher,
   realtime: Arc<Realtime>,
 ) -> Result<(), EventBusError> {
-  dispatcher.register(move |event: ChannelMessagePublished| {
+  dispatcher.register(move |event: ChannelMessageSubmitted| {
     // Получаем Arc<RealtimeApplication> до async move,
     // чтобы не клонировать Arc<Realtime> для каждого сообщения.
     let application = realtime.application(&event.application_id);
@@ -26,7 +26,7 @@ pub(super) fn register(
           application_id: event.application_id.as_str().to_owned(),
         };
 
-        EventBusError::handler(ChannelMessagePublished::NAME, err)
+        EventBusError::handler(ChannelMessageSubmitted::NAME, err)
       })?;
 
       application
@@ -37,7 +37,7 @@ pub(super) fn register(
         )
         .await
         .map_err(|error| {
-          EventBusError::handler(ChannelMessagePublished::NAME, error)
+          EventBusError::handler(ChannelMessageSubmitted::NAME, error)
         })?;
 
       Ok(())
@@ -60,7 +60,7 @@ mod tests {
   }
 
   fn message(application_id: &str) -> EventMessage {
-    EventMessage::try_from_event(&ChannelMessagePublished {
+    EventMessage::try_from_event(&ChannelMessageSubmitted {
       application_id: ApplicationId::new(application_id),
       channel: "test-channel".to_owned(),
       messages: Vec::new(),
@@ -92,7 +92,7 @@ mod tests {
 
     match result {
       Err(EventBusError::Handler { event_name, source }) => {
-        assert_eq!(event_name, ChannelMessagePublished::NAME);
+        assert_eq!(event_name, ChannelMessageSubmitted::NAME);
         assert!(source.to_string().contains("application-2"));
       },
       other => panic!("expected handler error, got {other:?}"),

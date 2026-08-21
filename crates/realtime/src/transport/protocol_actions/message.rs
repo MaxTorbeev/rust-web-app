@@ -1,4 +1,4 @@
-use crate::{ChannelMessagePublished, ProtocolMessage};
+use crate::{ChannelMessageSubmitted, ProtocolMessage};
 use crate::transport::SocketContext;
 
 pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
@@ -8,7 +8,7 @@ pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> P
       // Require `publish` permission for this channel before broadcasting.
       let result = context
         .event_bus
-        .publish(ChannelMessagePublished {
+        .publish(ChannelMessageSubmitted {
           application_id: context.connection.application_id().clone(),
           channel: channel.to_owned(),
           messages: message.messages.clone().unwrap_or_default(),
