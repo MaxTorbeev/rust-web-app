@@ -14,7 +14,8 @@ nats-client = { path = "crates/nats-client" }
 realtime = { path = "crates/realtime" }
 auth = { path = "crates/auth" }
 event-bus = { path = "crates/event-bus" }
+event-bus-jetstream = {path = "crates/event-bus-jetstream"}
 
 [workspace]
-members = [".", "crates/nats-client", "crates/api-response", "crates/auth", "crates/realtime", "crates/redis-client", "crates/realtime", "crates/support", "crates/event-bus", "crates/nats-client"]
+members = [".", "crates/*"]
 resolver = "3"

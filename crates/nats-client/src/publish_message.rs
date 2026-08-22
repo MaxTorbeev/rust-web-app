@@ -12,10 +12,7 @@ pub struct PublishMessage {
 }
 
 impl PublishMessage {
-    pub fn new(
-        subject: impl Into<String>,
-        payload: Bytes,
-    ) -> Result<Self, PublishMessageError> {
+    pub fn new(subject: impl Into<String>, payload: Bytes) -> Result<Self, PublishMessageError> {
         let subject = subject.into();
 
         if !is_valid_publish_subject(&subject) {
@@ -70,11 +67,12 @@ impl PublishMessage {
     }
 }
 
+/// Проверить, что subject не пустой и не содержит табов и переносов строки
 fn is_valid_publish_subject(subject: &str) -> bool {
     !subject.is_empty()
-        && !subject
-            .bytes()
-            .any(|character| matches!(character, b' ' | b'\t' | b'\r' | b'\n'))
+      && !subject
+      .bytes()
+      .any(|character| matches!(character, b' ' | b'\t' | b'\r' | b'\n' | b'*' | b'>'))
 }
 
 #[cfg(test)]

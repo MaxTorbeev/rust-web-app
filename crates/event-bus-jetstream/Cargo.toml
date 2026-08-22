@@ -1,0 +1,12 @@
+[package]
+name = "event-bus-jetstream"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+event-bus = { path = "../event-bus" }
+nats-client = { path = "../nats-client" }
+bytes = "1"
+thiserror = "2"
+tracing = "0.1"
+tokio = { version = "1.52.3", features = ["sync", "time", "rt"] }

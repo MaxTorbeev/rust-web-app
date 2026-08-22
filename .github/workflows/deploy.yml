@@ -136,6 +136,8 @@ jobs:
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
 
+      APP: ${{ vars.APP }}
+      APP_ENV: ${{ vars.APP_ENV }}
       APP_AUTH_LOGIN: ${{ vars.APP_AUTH_LOGIN }}
       APP_REALTIME_API_KEY: ${{ secrets.APP_REALTIME_API_KEY }}
       APP_AUTH_PASSWORD_HASH: ${{ secrets.APP_AUTH_PASSWORD_HASH }}
@@ -169,6 +171,8 @@ jobs:
           install -m 600 /dev/null "$environment_file"
           
           for variable_name in \
+            APP \
+            APP_ENV \
             REDIS_PASSWORD \
             APP_REALTIME_API_KEY \
             APP_AUTH_LOGIN \
@@ -179,6 +183,12 @@ jobs:
               exit 1
             fi
           done
+          
+          printf 'APP=%s\n' "$APP" \
+            >> "$environment_file"
+          
+          printf 'APP_ENV=%s\n' "$APP_ENV" \
+            >> "$environment_file"
           
           printf 'RUST_LOG=%s\n' "${RUST_LOG:-info}" \
             >> "$environment_file"

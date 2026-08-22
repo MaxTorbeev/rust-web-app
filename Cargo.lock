@@ -509,6 +509,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-bus-jetstream"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "event-bus",
+ "nats-client",
+ "thiserror",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "ff"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -989,6 +1001,7 @@ dependencies = [
  "axum",
  "dotenvy",
  "event-bus",
+ "event-bus-jetstream",
  "nats-client",
  "realtime",
  "redis-client",
