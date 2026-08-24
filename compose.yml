@@ -1,6 +1,24 @@
 name: mxt-realtime
 
 services:
+  nats:
+    image: nats:2.11-alpine
+    restart: unless-stopped
+    init: true
+
+    command:
+      - -js
+      - -sd
+      - /data/jetstream
+      - -m
+      - "8222"
+
+    volumes:
+      - nats-data:/data
+
+    security_opt:
+      - no-new-privileges:true
+
   app:
     image: ${APP_IMAGE:-mxt-realtime:local}
 
@@ -21,11 +39,14 @@ services:
       REDIS_HOST: redis
       REDIS_PORT: "6379"
       REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+      NATS_SERVERS: ${NATS_SERVERS:-nats://nats:4222}
 
     ports:
       - "127.0.0.1:4008:4008"
 
     depends_on:
+      nats:
+        condition: service_started
       redis:
         condition: service_healthy
 
@@ -115,3 +136,4 @@ configs:
 
 volumes:
   redis-data:
+  nats-data:
