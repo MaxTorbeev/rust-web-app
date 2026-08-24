@@ -1,56 +1,64 @@
-use crate::JetStreamPublisherError;
+use crate::error::JetStreamPublisherConfigError;
+use crate::subject::is_valid_subject_token;
 
+/// Configuration required to map events to JetStream subjects.
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct JetStreamPublisherConfig {
-  pub subject_prefix: String
+    subject_prefix: String,
 }
 
 impl JetStreamPublisherConfig {
-  pub fn try_from_env() -> Result<Self, JetStreamPublisherError> {
-    let app_name = read_env("APP")?;
-    let app_env = read_env("APP_ENV")?;
+    /// Builds a configuration from explicit application namespace components.
+    pub fn try_new(
+        app_name: impl Into<String>,
+        app_environment: impl Into<String>,
+    ) -> Result<Self, JetStreamPublisherConfigError> {
+        let app_name = app_name.into();
+        let app_environment = app_environment.into();
 
-    Ok(Self {
-      subject_prefix: format!("{}:{}:{}", app_name, app_env, "events")
+        validate_namespace_component("APP", &app_name)?;
+        validate_namespace_component("APP_ENV", &app_environment)?;
+
+        Ok(Self {
+            subject_prefix: format!("{app_name}.{app_environment}.events"),
+        })
+    }
+
+    /// Reads `APP` and `APP_ENV` and validates them before startup continues.
+    pub fn try_from_env() -> Result<Self, JetStreamPublisherConfigError> {
+        Self::try_new(read_env("APP")?, read_env("APP_ENV")?)
+    }
+
+    pub(crate) fn subject_prefix(&self) -> &str {
+        &self.subject_prefix
+    }
+}
+
+fn read_env(variable: &'static str) -> Result<String, JetStreamPublisherConfigError> {
+    std::env::var(variable).map_err(|source| {
+        JetStreamPublisherConfigError::MissingEnvironmentVariable { variable, source }
     })
-  }
 }
 
-fn read_env(variable: &'static str) -> Result<String, JetStreamPublisherError> {
-  let value = std::env::var(variable)
-    .map_err(|source| JetStreamPublisherError::MissingEnv {
-      variable,
-      source,
-    })?;
+fn validate_namespace_component(
+    component: &'static str,
+    value: &str,
+) -> Result<(), JetStreamPublisherConfigError> {
+    if value.is_empty() {
+        return Err(JetStreamPublisherConfigError::InvalidNamespaceComponent {
+            component,
+            value: value.to_owned(),
+            reason: "value must not be empty",
+        });
+    }
 
-  validate_env_value(variable, &value)?;
+    if !is_valid_subject_token(value) {
+        return Err(JetStreamPublisherConfigError::InvalidNamespaceComponent {
+            component,
+            value: value.to_owned(),
+            reason: "value may contain only ASCII letters, digits, '-' and '_'",
+        });
+    }
 
-  Ok(value)
-}
-
-fn validate_env_value(variable: &'static str, value: &str) -> Result<(), JetStreamPublisherError> {
-  if value.is_empty() {
-    return Err(JetStreamPublisherError::InvalidEnv {
-      variable,
-      value: value.to_string(),
-      reason: "value must not be empty".to_string(),
-    });
-  }
-
-  if value.chars().any(|character| character.is_ascii_whitespace()) {
-    return Err(JetStreamPublisherError::InvalidEnv {
-      variable,
-      value: value.to_string(),
-      reason: "value must not contain whitespace".to_string(),
-    });
-  }
-
-  if value.contains('*') || value.contains('>') {
-    return Err(JetStreamPublisherError::InvalidEnv {
-      variable,
-      value: value.to_string(),
-      reason: "value must not contain NATS wildcards '*' or '>'".to_string(),
-    });
-  }
-
-  Ok(())
+    Ok(())
 }
