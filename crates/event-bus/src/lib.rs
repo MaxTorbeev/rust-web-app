@@ -10,6 +10,7 @@ mod handler_registration_error;
 mod processing_error_class;
 mod publish_receipt;
 mod publishers;
+mod processing;
 
 pub use dispatch_error::DispatchError;
 pub use event::{DeliveryClass, Event};
@@ -23,3 +24,4 @@ pub use handler_registration_error::HandlerRegistrationError;
 pub use processing_error_class::ProcessingErrorClass;
 pub use publish_receipt::PublishReceipt;
 pub use publishers::{EventPublishFuture, EventPublisher, LocalEventPublisher};
+pub use processing::*;
