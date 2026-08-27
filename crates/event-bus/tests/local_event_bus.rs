@@ -2,8 +2,9 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use event_bus::{
-    DeliveryClass, Event, EventBus, EventBusError, EventDispatcher, EventMessage,
-    EventPublishFuture, EventPublisher,
+    DeliveryClass, DispatchError, Event, EventBus, EventBusError, EventDispatcher, EventMessage,
+    EventMessageError, EventPublishFuture, EventPublisher, HandlerError, HandlerRegistrationError,
+    ProcessingErrorClass,
 };
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::json;
@@ -200,7 +201,10 @@ async fn encoding_failure_does_not_call_a_publisher() {
 
     let result = event_bus.publish(FailingEncodeEvent).await;
 
-    assert!(matches!(result, Err(EventBusError::Encode(_))));
+    assert!(matches!(
+        result,
+        Err(EventBusError::EventMessage(EventMessageError::Encode(_)))
+    ));
     assert!(distributed.publications().is_empty());
 }
 
@@ -226,7 +230,7 @@ fn event_message_wire_round_trip_preserves_the_envelope() {
 fn event_message_rejects_corrupt_transport_bytes() {
     let result = EventMessage::from_bytes(b"not-json");
 
-    assert!(matches!(result, Err(EventBusError::Decode(_))));
+    assert!(matches!(result, Err(EventMessageError::Decode(_))));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -345,7 +349,7 @@ async fn dispatcher_rejects_duplicate_wire_event_name() {
 
     assert!(matches!(
       result,
-      Err(EventBusError::HandlerAlreadyRegistered { event_name })
+      Err(HandlerRegistrationError::AlreadyRegistered { event_name })
         if event_name == DistributedEvent::NAME
     ));
 }
@@ -368,9 +372,14 @@ async fn dispatcher_rejects_unknown_version_and_invalid_payload() {
         .expect("handler must register");
 
     let unknown = EventMessage::new(Uuid::new_v4(), "test.unknown", 1, json!({}));
+    let unknown_error = dispatcher
+        .dispatch(&unknown)
+        .await
+        .expect_err("unknown event must fail dispatch");
+    assert_eq!(unknown_error.class(), ProcessingErrorClass::Permanent);
     assert!(matches!(
-      dispatcher.dispatch(&unknown).await,
-      Err(EventBusError::HandlerNotRegistered { event_name })
+      unknown_error,
+      DispatchError::HandlerNotRegistered { event_name }
         if event_name == "test.unknown"
     ));
 
@@ -380,9 +389,14 @@ async fn dispatcher_rejects_unknown_version_and_invalid_payload() {
         DistributedEvent::VERSION + 1,
         json!({ "value": "payload" }),
     );
+    let version_error = dispatcher
+        .dispatch(&wrong_version)
+        .await
+        .expect_err("unsupported version must fail dispatch");
+    assert_eq!(version_error.class(), ProcessingErrorClass::Permanent);
     assert!(matches!(
-        dispatcher.dispatch(&wrong_version).await,
-        Err(EventBusError::EventVersionMismatch { .. })
+        version_error,
+        DispatchError::EventMessage(EventMessageError::EventVersionMismatch { .. })
     ));
 
     let invalid_payload = EventMessage::new(
@@ -391,9 +405,14 @@ async fn dispatcher_rejects_unknown_version_and_invalid_payload() {
         DistributedEvent::VERSION,
         json!({ "unexpected": true }),
     );
+    let payload_error = dispatcher
+        .dispatch(&invalid_payload)
+        .await
+        .expect_err("invalid payload must fail dispatch");
+    assert_eq!(payload_error.class(), ProcessingErrorClass::Permanent);
     assert!(matches!(
-        dispatcher.dispatch(&invalid_payload).await,
-        Err(EventBusError::Decode(_))
+        payload_error,
+        DispatchError::EventMessage(EventMessageError::Decode(_))
     ));
 
     assert_eq!(calls.load(Ordering::SeqCst), 0);
@@ -416,10 +435,7 @@ async fn local_event_bus_propagates_handler_error_without_retry() {
             async move {
                 handler_calls.fetch_add(1, Ordering::SeqCst);
 
-                Err(EventBusError::handler(
-                    DistributedEvent::NAME,
-                    HandlerFailed,
-                ))
+                Err(HandlerError::retryable(HandlerFailed))
             }
         })
         .expect("handler must register");
@@ -433,8 +449,44 @@ async fn local_event_bus_propagates_handler_error_without_retry() {
 
     assert!(matches!(
       result,
-      Err(EventBusError::Handler { event_name, .. })
+      Err(EventBusError::Dispatch(DispatchError::Handler {
+        event_name,
+        source,
+      }))
         if event_name == DistributedEvent::NAME
+          && source.class() == ProcessingErrorClass::Retryable
     ));
     assert_eq!(calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn dispatcher_preserves_handler_error_class() {
+    for expected in [
+        ProcessingErrorClass::Retryable,
+        ProcessingErrorClass::Permanent,
+    ] {
+        let mut dispatcher = EventDispatcher::new();
+        dispatcher
+            .register(move |_event: DistributedEvent| async move {
+                let error = match expected {
+                    ProcessingErrorClass::Retryable => HandlerError::retryable(HandlerFailed),
+                    ProcessingErrorClass::Permanent => HandlerError::permanent(HandlerFailed),
+                };
+
+                Err(error)
+            })
+            .expect("handler must register");
+
+        let message = EventMessage::try_from_event(&DistributedEvent {
+            value: "payload".to_owned(),
+        })
+        .expect("event message must encode");
+        let error = dispatcher
+            .dispatch(&message)
+            .await
+            .expect_err("handler must fail");
+
+        assert_eq!(error.class(), expected);
+        assert!(matches!(error, DispatchError::Handler { .. }));
+    }
 }

@@ -30,7 +30,9 @@ services:
     init: true
 
     env_file:
-      - .env
+      - path: .env
+      - path: node.env
+        required: false
 
     environment:
       APP_URL: 0.0.0.0:4008

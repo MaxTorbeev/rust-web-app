@@ -1,53 +1,32 @@
 use thiserror::Error;
 
+use crate::{DispatchError, EventMessageError};
+
+/// Ошибка публикации события через [`crate::EventBus`].
+///
+/// `EventBus` является исходящим API приложения, поэтому этот тип объединяет
+/// только ошибки подготовки envelope, выбранного publisher-а и локального
+/// dispatch-а. Детальный класс ошибки локальной обработки сохраняется внутри
+/// [`DispatchError`].
 #[derive(Debug, Error)]
 pub enum EventBusError {
-    #[error("failed to encode event: {0}")]
-    Encode(#[source] serde_json::Error),
+    /// EventMessage не удалось создать или сериализовать до публикации.
+    #[error(transparent)]
+    EventMessage(#[from] EventMessageError),
 
-    #[error("failed to decode event: {0}")]
-    Decode(#[source] serde_json::Error),
-
-    #[error("handler for event {event_name} is already registered")]
-    HandlerAlreadyRegistered { event_name: String },
-
-    #[error("handler for event {event_name} is not registered")]
-    HandlerNotRegistered { event_name: String },
-
-    #[error("event type mismatch: expected {expected}, got {actual}")]
-    EventTypeMismatch { expected: String, actual: String },
-
-    #[error("event version mismatch for {event_name}: expected {expected}, got {actual}")]
-    EventVersionMismatch {
-        event_name: String,
-        expected: u16,
-        actual: u16,
-    },
-
+    /// Выбранный publisher не смог подтвердить публикацию.
     #[error("failed to publish event: {0}")]
     Publisher(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    #[error("handler for event {event_name} failed: {source}")]
-    Handler {
-        event_name: String,
-
-        #[source]
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
+    /// Локальный publisher передал envelope dispatcher-у, и локальная обработка
+    /// завершилась ошибкой.
+    #[error(transparent)]
+    Dispatch(#[from] DispatchError),
 }
 
 impl EventBusError {
+    /// Оборачивает ошибку конкретного транспорта или publisher adapter-а.
     pub fn publisher(error: impl std::error::Error + Send + Sync + 'static) -> Self {
         Self::Publisher(Box::new(error))
-    }
-
-    pub fn handler(
-        event_name: impl Into<String>,
-        error: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
-        Self::Handler {
-            event_name: event_name.into(),
-            source: Box::new(error),
-        }
     }
 }

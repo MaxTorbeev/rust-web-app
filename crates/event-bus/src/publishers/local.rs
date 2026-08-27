@@ -18,8 +18,6 @@ impl EventPublisher for LocalEventPublisher {
         message: &'a EventMessage,
         _delivery: DeliveryClass,
     ) -> EventPublishFuture<'a> {
-        Box::pin(async move {
-            self.dispatcher.dispatch(message).await
-        })
+        Box::pin(async move { self.dispatcher.dispatch(message).await.map_err(Into::into) })
     }
 }

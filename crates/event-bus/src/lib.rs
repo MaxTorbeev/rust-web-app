@@ -1,15 +1,25 @@
+mod dispatch_error;
 mod event;
 mod event_bus;
 mod event_bus_error;
 mod event_dispatcher;
 mod event_message;
+mod event_message_error;
+mod handler_error;
+mod handler_registration_error;
+mod processing_error_class;
 mod publish_receipt;
 mod publishers;
 
+pub use dispatch_error::DispatchError;
 pub use event::{DeliveryClass, Event};
 pub use event_bus::EventBus;
 pub use event_bus_error::EventBusError;
 pub use event_dispatcher::EventDispatcher;
 pub use event_message::EventMessage;
+pub use event_message_error::EventMessageError;
+pub use handler_error::HandlerError;
+pub use handler_registration_error::HandlerRegistrationError;
+pub use processing_error_class::ProcessingErrorClass;
 pub use publish_receipt::PublishReceipt;
 pub use publishers::{EventPublishFuture, EventPublisher, LocalEventPublisher};

@@ -2,8 +2,12 @@ use async_nats::jetstream::message::PublishMessage as DriverPublishMessage;
 use bytes::Bytes;
 
 use crate::PublishMessageError;
+use crate::validation::is_valid_publish_subject;
 
 /// An outbound JetStream message independent of the NATS driver API.
+///
+/// Подготовленное исходящее сообщение JetStream, не раскрывающее публичные типы
+/// драйвера `async-nats`.
 #[derive(Clone, Debug)]
 pub struct PublishMessage {
     subject: String,
@@ -12,6 +16,9 @@ pub struct PublishMessage {
 }
 
 impl PublishMessage {
+    /// Creates a message with a validated publish subject and raw payload.
+    ///
+    /// Создаёт сообщение с проверенным publish subject и исходным payload.
     pub fn new(subject: impl Into<String>, payload: Bytes) -> Result<Self, PublishMessageError> {
         let subject = subject.into();
 
@@ -29,6 +36,9 @@ impl PublishMessage {
     /// Sets `Nats-Msg-Id`, which JetStream uses for stream deduplication.
     ///
     /// Retries of the same logical publication must reuse the same identifier.
+    ///
+    /// Устанавливает `Nats-Msg-Id` для серверной дедупликации. Все повторные
+    /// попытки одной логической публикации должны использовать тот же ID.
     pub fn message_id(
         mut self,
         message_id: impl Into<String>,
@@ -48,10 +58,16 @@ impl PublishMessage {
         Ok(self)
     }
 
+    /// Returns the destination publish subject.
+    ///
+    /// Возвращает subject, в который будет опубликовано сообщение.
     pub fn subject(&self) -> &str {
         &self.subject
     }
 
+    /// Returns the raw outbound payload.
+    ///
+    /// Возвращает исходный payload подготовленного сообщения.
     pub fn payload(&self) -> &Bytes {
         &self.payload
     }
@@ -65,14 +81,6 @@ impl PublishMessage {
 
         (self.subject, message)
     }
-}
-
-/// Проверить, что subject не пустой и не содержит табов и переносов строки
-fn is_valid_publish_subject(subject: &str) -> bool {
-    !subject.is_empty()
-      && !subject
-      .bytes()
-      .any(|character| matches!(character, b' ' | b'\t' | b'\r' | b'\n' | b'*' | b'>'))
 }
 
 #[cfg(test)]
@@ -120,7 +128,17 @@ mod tests {
 
     #[test]
     fn rejects_invalid_publish_subjects() {
-        for subject in ["", "events messages", "events\tmessages", "events\r\nmessages"] {
+        for subject in [
+            "",
+            ".events",
+            "events.",
+            "events..messages",
+            "events messages",
+            "events\tmessages",
+            "events\r\nmessages",
+            "events.*",
+            "events.>",
+        ] {
             let result = PublishMessage::new(subject, Bytes::new());
 
             assert_eq!(result.unwrap_err(), PublishMessageError::InvalidSubject);
@@ -147,13 +165,10 @@ mod tests {
 
     #[test]
     fn cloned_message_preserves_deduplication_identity_for_retry() {
-        let message = PublishMessage::new(
-            "events.messages",
-            Bytes::from_static(b"payload"),
-        )
-        .expect("publish message must be valid")
-        .message_id("event-123")
-        .expect("message ID must be valid");
+        let message = PublishMessage::new("events.messages", Bytes::from_static(b"payload"))
+            .expect("publish message must be valid")
+            .message_id("event-123")
+            .expect("message ID must be valid");
 
         let (first_subject, first) = message.clone().into_driver();
         let (retry_subject, retry) = message.into_driver();

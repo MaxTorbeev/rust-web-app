@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use event_bus::{EventBusError, EventDispatcher};
+use event_bus::{EventDispatcher, HandlerRegistrationError};
 
 use crate::Realtime;
 
@@ -10,6 +10,6 @@ mod channel_message_submitted;
 pub fn register_event_handlers(
   dispatcher: &mut EventDispatcher,
   realtime: Arc<Realtime>,
-) -> Result<(), EventBusError> {
+) -> Result<(), HandlerRegistrationError> {
   channel_message_submitted::register(dispatcher, realtime)
 }

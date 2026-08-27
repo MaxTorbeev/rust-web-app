@@ -27,7 +27,8 @@ impl EventBus {
         dispatcher: Arc<EventDispatcher>,
         distributed_publisher: Arc<dyn EventPublisher>,
     ) -> Self {
-        let local_publisher: Arc<dyn EventPublisher> = Arc::new(LocalEventPublisher::new(dispatcher));
+        let local_publisher: Arc<dyn EventPublisher> =
+            Arc::new(LocalEventPublisher::new(dispatcher));
 
         Self {
             local_publisher,

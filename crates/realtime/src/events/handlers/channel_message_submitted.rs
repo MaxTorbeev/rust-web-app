@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use event_bus::{Event, EventBusError, EventDispatcher};
+use event_bus::{EventDispatcher, HandlerError, HandlerRegistrationError};
 use thiserror::Error;
 
 use crate::{ChannelMessageSubmitted, ProtocolMessage, Realtime};
@@ -14,7 +14,7 @@ struct UnknownApplication {
 pub(super) fn register(
   dispatcher: &mut EventDispatcher,
   realtime: Arc<Realtime>,
-) -> Result<(), EventBusError> {
+) -> Result<(), HandlerRegistrationError> {
   dispatcher.register(move |event: ChannelMessageSubmitted| {
     // Получаем Arc<RealtimeApplication> до async move,
     // чтобы не клонировать Arc<Realtime> для каждого сообщения.
@@ -26,7 +26,9 @@ pub(super) fn register(
           application_id: event.application_id.as_str().to_owned(),
         };
 
-        EventBusError::handler(ChannelMessageSubmitted::NAME, err)
+        // Registry формируется при запуске и не изменится от повторной
+        // доставки того же события в этот процесс.
+        HandlerError::permanent(err)
       })?;
 
       application
@@ -36,9 +38,9 @@ pub(super) fn register(
           ProtocolMessage::message(&event.channel, event.messages),
         )
         .await
-        .map_err(|error| {
-          EventBusError::handler(ChannelMessageSubmitted::NAME, error)
-        })?;
+        // BroadcastError сейчас означает детерминированную ошибку
+        // сериализации frame: повтор с тем же payload её не исправит.
+        .map_err(HandlerError::permanent)?;
 
       Ok(())
     }
@@ -49,7 +51,12 @@ pub(super) fn register(
 mod tests {
   use super::*;
   use crate::{ApplicationId, RealtimeConfig};
-  use event_bus::EventMessage;
+  use event_bus::{
+    DispatchError,
+    Event,
+    EventMessage,
+    ProcessingErrorClass,
+  };
 
   fn test_realtime() -> Arc<Realtime> {
     Arc::new(Realtime::from_config(RealtimeConfig {
@@ -91,8 +98,12 @@ mod tests {
       .await;
 
     match result {
-      Err(EventBusError::Handler { event_name, source }) => {
+      Err(DispatchError::Handler { event_name, source }) => {
         assert_eq!(event_name, ChannelMessageSubmitted::NAME);
+        assert_eq!(
+          source.class(),
+          ProcessingErrorClass::Permanent,
+        );
         assert!(source.to_string().contains("application-2"));
       },
       other => panic!("expected handler error, got {other:?}"),

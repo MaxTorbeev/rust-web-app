@@ -1,7 +1,7 @@
+mod consumer;
 mod nats;
 mod stream;
-mod consumer;
 
-pub use nats::NatsConfig;
-pub use stream::StreamConfig;
 pub use consumer::ConsumerConfig;
+pub use nats::NatsConfig;
+pub use stream::{StreamConfig, StreamLimits};

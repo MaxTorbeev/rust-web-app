@@ -251,6 +251,14 @@ jobs:
             -P "$DEPLOY_PORT" \
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
+            deploy/install-node-identity.sh \
+            "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIRECTORY/deploy/install-node-identity.sh"
+
+          scp \
+            -i "$HOME/.ssh/deploy_key" \
+            -P "$DEPLOY_PORT" \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
             deploy/nginx/default.conf.template \
             "$DEPLOY_USER@$DEPLOY_HOST:$DEPLOY_DIRECTORY/deploy/nginx/default.conf.template"
 
@@ -276,7 +284,10 @@ jobs:
             -o IdentitiesOnly=yes \
             -o StrictHostKeyChecking=yes \
             "$DEPLOY_USER@$DEPLOY_HOST" \
-            "chmod 600 '$DEPLOY_DIRECTORY/.env'"
+            "set -eu
+             chmod 600 '$DEPLOY_DIRECTORY/.env'
+             chmod 0755 '$DEPLOY_DIRECTORY/deploy/install-node-identity.sh'
+             '$DEPLOY_DIRECTORY/deploy/install-node-identity.sh' '$DEPLOY_DIRECTORY'"
 
       - name: Log server in to GHCR
         shell: bash

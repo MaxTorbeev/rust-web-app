@@ -1,15 +1,19 @@
-mod stream_setup;
+mod ack;
+mod config;
 mod connect;
+mod message_metadata;
 mod publish;
 mod publish_message;
-mod subscribe;
 mod receive;
-mod ack;
+mod stream_setup;
+mod subscribe;
 
-pub use stream_setup::StreamSetupError;
+pub use ack::AckError;
+pub use config::{ConsumerConfigError, NatsConfigError, StreamConfigError, StreamLimitsError};
 pub use connect::ConnectError;
+pub use message_metadata::MessageMetadataError;
 pub use publish::PublishError;
 pub use publish_message::PublishMessageError;
-pub use subscribe::SubscribeError;
 pub use receive::ReceiveError;
-pub use ack::AckError;
+pub use stream_setup::StreamSetupError;
+pub use subscribe::SubscribeError;

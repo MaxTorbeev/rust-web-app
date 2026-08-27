@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::app::config::HttpConfig;
 use auth::AuthConfig;
-use event_bus::{EventBus, EventBusError, EventDispatcher};
+use event_bus::{EventBus, EventDispatcher, HandlerRegistrationError};
 use realtime::{register_event_handlers, Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
 
@@ -34,7 +34,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
 fn build_event_bus(
     realtime: Arc<Realtime>,
-) -> Result<Arc<EventBus>, EventBusError> {
+) -> Result<Arc<EventBus>, HandlerRegistrationError> {
     let mut dispatcher = EventDispatcher::new();
 
     listeners::register(&mut dispatcher)?;

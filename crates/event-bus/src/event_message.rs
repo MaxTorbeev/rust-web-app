@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{Event, EventBusError};
+use crate::{Event, EventMessageError};
 
 /// Transport-independent representation of one domain event.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -33,7 +33,7 @@ impl EventMessage {
     /// Creates a message with a new identifier.
     ///
     /// The returned value must be reused for all retries of the same publication.
-    pub fn try_from_event<E>(event: &E) -> Result<Self, EventBusError>
+    pub fn try_from_event<E>(event: &E) -> Result<Self, EventMessageError>
     where
         E: Event,
     {
@@ -41,11 +41,11 @@ impl EventMessage {
     }
 
     /// Creates a message with an existing identifier.
-    pub fn try_from_event_with_id<E>(event_id: Uuid, event: &E) -> Result<Self, EventBusError>
+    pub fn try_from_event_with_id<E>(event_id: Uuid, event: &E) -> Result<Self, EventMessageError>
     where
         E: Event,
     {
-        let payload = serde_json::to_value(event).map_err(EventBusError::Encode)?;
+        let payload = serde_json::to_value(event).map_err(EventMessageError::Encode)?;
 
         Ok(Self::new(event_id, E::NAME, E::VERSION, payload))
     }
@@ -67,35 +67,35 @@ impl EventMessage {
     }
 
     /// Serializes the complete envelope for a transport such as NATS.
-    pub fn to_bytes(&self) -> Result<Vec<u8>, EventBusError> {
-        serde_json::to_vec(self).map_err(EventBusError::Encode)
+    pub fn to_bytes(&self) -> Result<Vec<u8>, EventMessageError> {
+        serde_json::to_vec(self).map_err(EventMessageError::Encode)
     }
 
     /// Restores a complete envelope received from transport.
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, EventBusError> {
-        serde_json::from_slice(bytes).map_err(EventBusError::Decode)
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, EventMessageError> {
+        serde_json::from_slice(bytes).map_err(EventMessageError::Decode)
     }
 
     /// Decodes the typed domain event stored in the payload.
-    pub fn decode_event<E>(&self) -> Result<E, EventBusError>
+    pub fn decode_event<E>(&self) -> Result<E, EventMessageError>
     where
         E: Event,
     {
         if self.event_name != E::NAME {
-            return Err(EventBusError::EventTypeMismatch {
+            return Err(EventMessageError::EventTypeMismatch {
                 expected: E::NAME.to_string(),
                 actual: self.event_name.clone(),
             });
         }
 
         if self.schema_version != E::VERSION {
-            return Err(EventBusError::EventVersionMismatch {
+            return Err(EventMessageError::EventVersionMismatch {
                 event_name: self.event_name.clone(),
                 expected: E::VERSION,
                 actual: self.schema_version,
             });
         }
 
-        serde_json::from_value(self.payload.clone()).map_err(EventBusError::Decode)
+        serde_json::from_value(self.payload.clone()).map_err(EventMessageError::Decode)
     }
 }

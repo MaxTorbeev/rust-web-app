@@ -24,7 +24,7 @@ pub enum DeliveryClass {
 /// use std::sync::Arc;
 ///
 /// use event_bus::{
-///     DeliveryClass, Event, EventBus, EventBusError, EventDispatcher,
+///     DeliveryClass, Event, EventBus, EventDispatcher,
 /// };
 /// use serde::{Deserialize, Serialize};
 ///
@@ -42,7 +42,7 @@ pub enum DeliveryClass {
 /// }
 ///
 /// # #[tokio::main(flavor = "current_thread")]
-/// # async fn main() -> Result<(), EventBusError> {
+/// # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // 3. Register the required handler during application startup.
 /// let mut dispatcher = EventDispatcher::new();
 /// dispatcher.register(|event: UserCreated| async move {
