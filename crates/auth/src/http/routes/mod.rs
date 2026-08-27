@@ -1,5 +1,5 @@
-mod login;
 mod check;
+mod login;
 
-pub use login::login;
 pub use check::check;
+pub use login::login;

@@ -1,14 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use tokio::sync::RwLock;
 use crate::{
-  BroadcastError,
-  BroadcastOutcome,
-  ConnectionId,
-  OutboundSendError,
-  OutboundSender,
-  PreparedFrame,
+  BroadcastError, BroadcastOutcome, ConnectionId, OutboundSendError, OutboundSender, PreparedFrame,
   ProtocolMessage,
 };
+use std::collections::{HashMap, HashSet};
+use tokio::sync::RwLock;
 
 /// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
 /// can enqueue ProtocolMessage values without owning the WebSocket itself.
@@ -20,7 +15,6 @@ pub struct ChannelHubState {
   connections: HashMap<ConnectionId, HashSet<String>>,
 }
 
-
 pub struct ChannelHub {
   /// Map channel names to active WebSocket connections subscribed on this instances
   state: RwLock<ChannelHubState>,
@@ -29,7 +23,7 @@ pub struct ChannelHub {
 impl ChannelHub {
   pub fn new() -> Self {
     Self {
-      state: RwLock::new(ChannelHubState::default())
+      state: RwLock::new(ChannelHubState::default()),
     }
   }
 
@@ -52,7 +46,7 @@ impl ChannelHub {
       .insert(channel);
   }
 
-  pub async fn detach(&self, channel: &str, connection_id: &ConnectionId) ->bool {
+  pub async fn detach(&self, channel: &str, connection_id: &ConnectionId) -> bool {
     let mut state = self.state.write().await;
 
     Self::detach_locked(&mut state, channel, connection_id)
@@ -68,7 +62,8 @@ impl ChannelHub {
     let targets = {
       let state = self.state.read().await;
 
-      state.channels
+      state
+        .channels
         .get(channel)
         .map(|connections| {
           connections
@@ -129,13 +124,10 @@ impl ChannelHub {
 
   /// Removes a local WebSocket connection from all attached channels.
   /// Returns the channels that were affected, so presence cleanup can emit leave events.
-  pub async fn disconnect(&self, connection_id: &ConnectionId) ->Vec<String> {
+  pub async fn disconnect(&self, connection_id: &ConnectionId) -> Vec<String> {
     let mut state = self.state.write().await;
 
-    let channels = state
-      .connections
-      .remove(connection_id)
-      .unwrap_or_default();
+    let channels = state.connections.remove(connection_id).unwrap_or_default();
 
     for channel in &channels {
       Self::detach_locked(&mut state, channel, connection_id);
@@ -152,12 +144,17 @@ impl ChannelHub {
   pub async fn is_attached(&self, channel: &str, connection_id: &ConnectionId) -> bool {
     let state = self.state.read().await;
 
-    state.channels.get(channel).is_some_and(|connections| {
-      connections.contains_key(connection_id)
-    })
+    state
+      .channels
+      .get(channel)
+      .is_some_and(|connections| connections.contains_key(connection_id))
   }
 
-  fn detach_locked(state: &mut ChannelHubState, channel: &str, connection_id: &ConnectionId) -> bool {
+  fn detach_locked(
+    state: &mut ChannelHubState,
+    channel: &str,
+    connection_id: &ConnectionId,
+  ) -> bool {
     let mut should_remove_channel = false;
 
     let removed = if let Some(connections) = state.channels.get_mut(channel) {
@@ -195,12 +192,12 @@ impl ChannelHub {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use std::time::Duration;
+  use crate::ProtocolAction;
+  use crate::transport::{ShutdownListener, shutdown_channel};
   use axum::extract::ws::Message as WebSocketMessage;
+  use std::time::Duration;
   use tokio::sync::mpsc;
   use tokio::time::timeout;
-  use crate::ProtocolAction;
-  use crate::transport::{shutdown_channel, ShutdownListener};
 
   const TEST_TIMEOUT: Duration = Duration::from_secs(1);
   const CHANNEL_A: &str = "channel-a";
@@ -260,17 +257,23 @@ mod tests {
 
     // The second subscription proves that overflow disconnects the whole
     // connection, not only its subscription to the broadcast channel.
-    hub.attach(CHANNEL_A, slow_connection_id.clone(), slow_sender.clone()).await;
-    hub.attach(CHANNEL_B, slow_connection_id.clone(), slow_sender).await;
-    hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
+    hub
+      .attach(CHANNEL_A, slow_connection_id.clone(), slow_sender.clone())
+      .await;
+    hub
+      .attach(CHANNEL_B, slow_connection_id.clone(), slow_sender)
+      .await;
+    hub
+      .attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender)
+      .await;
 
     let outcome = timeout(
       TEST_TIMEOUT,
       hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
     )
-      .await
-      .expect("a full recipient must not block broadcast")
-      .expect("broadcast frame must serialize");
+    .await
+    .expect("a full recipient must not block broadcast")
+    .expect("broadcast frame must serialize");
 
     assert_eq!(
       outcome,
@@ -311,17 +314,27 @@ mod tests {
     // A dropped receiver models a WebSocket writer that has already stopped.
     drop(closed_receiver);
 
-    hub.attach(CHANNEL_A, closed_connection_id.clone(), closed_sender.clone()).await;
-    hub.attach(CHANNEL_B, closed_connection_id.clone(), closed_sender).await;
-    hub.attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender).await;
+    hub
+      .attach(
+        CHANNEL_A,
+        closed_connection_id.clone(),
+        closed_sender.clone(),
+      )
+      .await;
+    hub
+      .attach(CHANNEL_B, closed_connection_id.clone(), closed_sender)
+      .await;
+    hub
+      .attach(CHANNEL_A, healthy_connection_id.clone(), healthy_sender)
+      .await;
 
     let outcome = timeout(
       TEST_TIMEOUT,
       hub.broadcast(CHANNEL_A, ProtocolMessage::heartbeat()),
     )
-      .await
-      .expect("a closed recipient must not block broadcast")
-      .expect("broadcast frame must serialize");
+    .await
+    .expect("a closed recipient must not block broadcast")
+    .expect("broadcast frame must serialize");
 
     assert_eq!(
       outcome,

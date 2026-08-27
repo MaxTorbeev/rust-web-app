@@ -8,6 +8,6 @@ pub async fn auth(message: ProtocolMessage, context: &SocketContext<'_>) -> Prot
       // Verify the new access token, replace connection authorization and reject failed renewal.
       ProtocolMessage::connected(context.connection)
     }
-    None => ProtocolMessage::nack(message.msg_serial)
+    None => ProtocolMessage::nack(message.msg_serial),
   }
 }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::PresenceAction;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

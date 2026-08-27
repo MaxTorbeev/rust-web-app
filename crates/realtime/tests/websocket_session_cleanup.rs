@@ -5,35 +5,20 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use auth::VerifiedToken;
+use axum::Router;
 use axum::extract::ws::WebSocketUpgrade;
 use axum::routing::any;
-use axum::Router;
 use event_bus::{
-  DeliveryClass,
-  Event,
-  EventBus,
-  EventBusError,
-  EventDispatcher,
-  EventMessage,
-  EventPublishFuture,
+  DeliveryClass, Event, EventBus, EventBusError, EventDispatcher, EventMessage, EventPublishFuture,
   EventPublisher,
 };
 use futures_util::{SinkExt, StreamExt};
 use realtime::{
+  ApplicationId, Connection, ConnectionId, PresenceAction, ProtocolAction, ProtocolMessage,
+  Realtime, RealtimeApplication, RealtimeConfig, WebsocketConnected, WebsocketDisconnected,
   register_event_handlers,
-  ApplicationId,
-  Connection,
-  ConnectionId,
-  PresenceAction,
-  ProtocolAction,
-  ProtocolMessage,
-  Realtime,
-  RealtimeApplication,
-  RealtimeConfig,
-  WebsocketConnected,
-  WebsocketDisconnected,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
@@ -53,9 +38,7 @@ async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
   let mut session = TestSession::connect().await;
   let connection_id = session.connection_id.clone();
 
-  let connected = session
-    .expect_action(ProtocolAction::Connected)
-    .await;
+  let connected = session.expect_action(ProtocolAction::Connected).await;
   assert_eq!(
     connected.connection_id.as_deref(),
     Some(connection_id.as_str()),
@@ -63,19 +46,23 @@ async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
   session.events.expect_connected(&connection_id).await;
 
   // Создаём состояние channel и presence, которое session должна очистить.
-  session.send(json!({
-    "action": ProtocolAction::Attach,
-    "channel": CHANNEL,
-  })).await;
+  session
+    .send(json!({
+      "action": ProtocolAction::Attach,
+      "channel": CHANNEL,
+    }))
+    .await;
   session.expect_action(ProtocolAction::Attached).await;
   session.expect_action(ProtocolAction::Sync).await;
 
-  session.send(json!({
-    "action": ProtocolAction::Presence,
-    "channel": CHANNEL,
-    "msgSerial": 1,
-    "presence": [{ "action": PresenceAction::Enter }],
-  })).await;
+  session
+    .send(json!({
+      "action": ProtocolAction::Presence,
+      "channel": CHANNEL,
+      "msgSerial": 1,
+      "presence": [{ "action": PresenceAction::Enter }],
+    }))
+    .await;
   session.expect_action(ProtocolAction::Presence).await;
   session.expect_action(ProtocolAction::Ack).await;
 
@@ -83,9 +70,11 @@ async fn disconnect_cleans_session_state_and_emits_lifecycle_once() {
   assert!(session.is_attached(CHANNEL).await);
   assert_eq!(session.presence_count(CHANNEL).await, 1);
 
-  session.send(json!({
-    "action": ProtocolAction::Disconnect,
-  })).await;
+  session
+    .send(json!({
+      "action": ProtocolAction::Disconnect,
+    }))
+    .await;
   session.expect_action(ProtocolAction::Disconnected).await;
   session.events.expect_disconnected(&connection_id).await;
 
@@ -103,26 +92,28 @@ async fn channel_message_is_broadcast_and_acknowledged() {
   session.expect_action(ProtocolAction::Connected).await;
   session.events.expect_connected(&connection_id).await;
 
-  session.send(json!({
-    "action": ProtocolAction::Attach,
-    "channel": CHANNEL,
-  })).await;
+  session
+    .send(json!({
+      "action": ProtocolAction::Attach,
+      "channel": CHANNEL,
+    }))
+    .await;
   session.expect_action(ProtocolAction::Attached).await;
   session.expect_action(ProtocolAction::Sync).await;
 
-  session.send(json!({
-    "action": ProtocolAction::Message,
-    "channel": CHANNEL,
-    "msgSerial": 7,
-    "messages": [{
-      "name": "chat.message",
-      "data": { "text": "hello" },
-    }],
-  })).await;
-
-  let published = session
-    .expect_action(ProtocolAction::Message)
+  session
+    .send(json!({
+      "action": ProtocolAction::Message,
+      "channel": CHANNEL,
+      "msgSerial": 7,
+      "messages": [{
+        "name": "chat.message",
+        "data": { "text": "hello" },
+      }],
+    }))
     .await;
+
+  let published = session.expect_action(ProtocolAction::Message).await;
   assert_eq!(published.channel.as_deref(), Some(CHANNEL));
   assert_eq!(published.msg_serial, None);
 
@@ -140,24 +131,24 @@ async fn channel_message_is_broadcast_and_acknowledged() {
 
 #[tokio::test(flavor = "current_thread")]
 async fn channel_message_publish_failure_returns_nack() {
-  let publisher: Arc<dyn EventPublisher> =
-    Arc::new(FailingDistributedPublisher);
-  let mut session =
-    TestSession::connect_with_distributed_publisher(publisher).await;
+  let publisher: Arc<dyn EventPublisher> = Arc::new(FailingDistributedPublisher);
+  let mut session = TestSession::connect_with_distributed_publisher(publisher).await;
   let connection_id = session.connection_id.clone();
 
   session.expect_action(ProtocolAction::Connected).await;
   session.events.expect_connected(&connection_id).await;
 
-  session.send(json!({
-    "action": ProtocolAction::Message,
-    "channel": CHANNEL,
-    "msgSerial": 9,
-    "messages": [{
-      "name": "chat.message",
-      "data": { "text": "not published" },
-    }],
-  })).await;
+  session
+    .send(json!({
+      "action": ProtocolAction::Message,
+      "channel": CHANNEL,
+      "msgSerial": 9,
+      "messages": [{
+        "name": "chat.message",
+        "data": { "text": "not published" },
+      }],
+    }))
+    .await;
 
   let nack = session.expect_action(ProtocolAction::Nack).await;
   assert_eq!(nack.msg_serial, Some(9));
@@ -198,19 +189,13 @@ impl LifecycleEvents {
   }
 
   async fn expect_connected(&mut self, connection_id: &ConnectionId) {
-    let event = receive_event(
-      &mut self.connected,
-      "WebsocketConnected",
-    ).await;
+    let event = receive_event(&mut self.connected, "WebsocketConnected").await;
 
     assert_eq!(event.connection_id, connection_id.as_str());
   }
 
   async fn expect_disconnected(&mut self, connection_id: &ConnectionId) {
-    let event = receive_event(
-      &mut self.disconnected,
-      "WebsocketDisconnected",
-    ).await;
+    let event = receive_event(&mut self.disconnected, "WebsocketDisconnected").await;
 
     assert_eq!(event.connection_id, connection_id.as_str());
   }
@@ -245,17 +230,14 @@ impl TestSession {
     Self::connect_with(|dispatcher| EventBus::local(dispatcher)).await
   }
 
-  async fn connect_with_distributed_publisher(
-    publisher: Arc<dyn EventPublisher>,
-  ) -> Self {
+  async fn connect_with_distributed_publisher(publisher: Arc<dyn EventPublisher>) -> Self {
     Self::connect_with(move |dispatcher| {
       EventBus::with_distributed_publisher(dispatcher, publisher)
-    }).await
+    })
+    .await
   }
 
-  async fn connect_with(
-    build_event_bus: impl FnOnce(Arc<EventDispatcher>) -> EventBus,
-  ) -> Self {
+  async fn connect_with(build_event_bus: impl FnOnce(Arc<EventDispatcher>) -> EventBus) -> Self {
     let mut dispatcher = EventDispatcher::new();
     let events = LifecycleEvents::register(&mut dispatcher);
     let realtime = test_realtime();
@@ -269,11 +251,7 @@ impl TestSession {
     let event_bus = Arc::new(build_event_bus(Arc::new(dispatcher)));
     let connection = application.create_connection(test_authorization());
     let connection_id = connection.id.clone();
-    let router = single_connection_router(
-      connection,
-      application.clone(),
-      event_bus,
-    );
+    let router = single_connection_router(connection, application.clone(), event_bus);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
       .await
@@ -287,10 +265,9 @@ impl TestSession {
         .expect("test server must run");
     });
 
-    let (socket, _) =
-      tokio_tungstenite::connect_async(format!("ws://{address}/"))
-        .await
-        .expect("test client must connect");
+    let (socket, _) = tokio_tungstenite::connect_async(format!("ws://{address}/"))
+      .await
+      .expect("test client must connect");
 
     Self {
       socket,
@@ -309,19 +286,12 @@ impl TestSession {
       .expect("protocol message must be sent");
   }
 
-  async fn expect_action(
-    &mut self,
-    expected_action: ProtocolAction,
-  ) -> ProtocolMessage {
+  async fn expect_action(&mut self, expected_action: ProtocolAction) -> ProtocolMessage {
     let message = self.receive().await;
     let actual_code = message.action.clone() as u8;
     let expected_code = expected_action as u8;
 
-    assert_eq!(
-      actual_code,
-      expected_code,
-      "unexpected protocol action",
-    );
+    assert_eq!(actual_code, expected_code, "unexpected protocol action",);
 
     message
   }
@@ -335,12 +305,7 @@ impl TestSession {
   }
 
   async fn presence_count(&self, channel: &str) -> usize {
-    self
-      .application
-      .presence_hub
-      .snapshot(channel)
-      .await
-      .len()
+    self.application.presence_hub.snapshot(channel).await.len()
   }
 
   async fn receive(&mut self) -> ProtocolMessage {
@@ -354,8 +319,7 @@ impl TestSession {
       panic!("expected a text protocol frame");
     };
 
-    serde_json::from_str(text.as_str())
-      .expect("the frame must contain a protocol message")
+    serde_json::from_str(text.as_str()).expect("the frame must contain a protocol message")
   }
 }
 
@@ -365,9 +329,7 @@ impl Drop for TestSession {
   }
 }
 
-fn register_handler<E: Event>(
-  dispatcher: &mut EventDispatcher,
-) -> UnboundedReceiver<E> {
+fn register_handler<E: Event>(dispatcher: &mut EventDispatcher) -> UnboundedReceiver<E> {
   let (sender, receiver) = mpsc::unbounded_channel();
   dispatcher
     .register(move |event: E| {
@@ -384,10 +346,7 @@ fn register_handler<E: Event>(
   receiver
 }
 
-async fn receive_event<E>(
-  receiver: &mut UnboundedReceiver<E>,
-  event_name: &str,
-) -> E {
+async fn receive_event<E>(receiver: &mut UnboundedReceiver<E>, event_name: &str) -> E {
   timeout(TEST_TIMEOUT, receiver.recv())
     .await
     .unwrap_or_else(|_| panic!("{event_name} event must be emitted"))
@@ -414,12 +373,7 @@ fn single_connection_router(
 
       async move {
         ws.on_upgrade(move |socket| {
-          realtime::websocket::handle_socket(
-            socket,
-            connection,
-            application,
-            event_bus,
-          )
+          realtime::websocket::handle_socket(socket, connection, application, event_bus)
         })
       }
     }),

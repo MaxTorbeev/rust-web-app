@@ -8,12 +8,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[error("failed to connect to NATS: {source}")]
 pub struct ConnectError {
-    #[source]
-    source: DriverConnectError,
+  #[source]
+  source: DriverConnectError,
 }
 
 impl ConnectError {
-    pub(crate) fn from_driver(source: DriverConnectError) -> Self {
-        Self { source }
-    }
+  pub(crate) fn from_driver(source: DriverConnectError) -> Self {
+    Self { source }
+  }
 }

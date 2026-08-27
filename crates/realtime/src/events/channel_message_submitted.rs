@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use event_bus::{DeliveryClass, Event};
 use crate::{ApplicationId, Message};
+use event_bus::{DeliveryClass, Event};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelMessageSubmitted {

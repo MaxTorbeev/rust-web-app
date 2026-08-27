@@ -1,7 +1,7 @@
-use tokio::task::JoinError;
-use thiserror::Error;
 use crate::OutboundSendError;
 use crate::transport::protocol_reader::ReaderError;
+use thiserror::Error;
+use tokio::task::JoinError;
 
 #[derive(Debug, Error)]
 pub(crate) enum SessionError {
@@ -21,7 +21,7 @@ pub(crate) enum SessionError {
   WriterTaskFailed(#[source] JoinError),
 
   #[error("websocket writer drain timed out")]
-  WriterDrainTimedOut
+  WriterDrainTimedOut,
 }
 
 impl From<ReaderError> for SessionError {

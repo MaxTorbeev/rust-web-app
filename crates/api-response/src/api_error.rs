@@ -1,7 +1,7 @@
-use axum::http::StatusCode;
-use axum::Json;
-use axum::response::{IntoResponse, Response};
 use crate::{ApiMessage, ApiResponse};
+use axum::Json;
+use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 
 pub struct ApiError {
   status: StatusCode,
@@ -29,6 +29,7 @@ impl IntoResponse for ApiError {
     (
       self.status,
       Json(ApiResponse::new(ApiMessage::new(self.message))),
-    ).into_response()
+    )
+      .into_response()
   }
 }

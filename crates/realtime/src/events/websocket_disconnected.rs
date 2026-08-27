@@ -1,9 +1,9 @@
-use serde::{Deserialize, Serialize};
 use event_bus::Event;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct WebsocketDisconnected {
-  pub connection_id: String
+  pub connection_id: String,
 }
 
 impl Event for WebsocketDisconnected {

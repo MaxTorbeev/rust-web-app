@@ -1,6 +1,10 @@
+use crate::{
+  ApplicationId, ApplicationKeyName, ApplicationRegistry, RealtimeApplication, RealtimeConfig,
+};
+use auth::{
+  TokenAccessVerifier, TokenCapability, TokenIssueError, TokenVerifyError, VerifiedToken,
+};
 use std::sync::Arc;
-use auth::{TokenAccessVerifier, TokenCapability, TokenIssueError, TokenVerifyError, VerifiedToken};
-use crate::{ApplicationId, ApplicationKeyName, ApplicationRegistry, RealtimeApplication, RealtimeConfig};
 
 pub struct Realtime {
   applications: ApplicationRegistry,
@@ -8,7 +12,7 @@ pub struct Realtime {
 
 pub struct RealtimeAccess {
   pub application: Arc<RealtimeApplication>,
-  pub token: VerifiedToken
+  pub token: VerifiedToken,
 }
 
 pub enum RealtimeAuthError {
@@ -41,14 +45,15 @@ impl Realtime {
     self.applications.get(application_id)
   }
 
-  pub fn verify_access_token(&self, access_token: &str) -> Result<RealtimeAccess, RealtimeAuthError> {
+  pub fn verify_access_token(
+    &self,
+    access_token: &str,
+  ) -> Result<RealtimeAccess, RealtimeAuthError> {
     let key_name = TokenAccessVerifier::unverified_key_id(access_token)?;
 
     let application_key_name = key_name
       .parse::<ApplicationKeyName>()
-      .map_err(|_| {
-        RealtimeAuthError::InvalidKeyName(key_name.clone())
-      })?;
+      .map_err(|_| RealtimeAuthError::InvalidKeyName(key_name.clone()))?;
 
     let application_id = application_key_name.application_id();
 
@@ -56,20 +61,11 @@ impl Realtime {
     // Resolve `key_id` through a product-key registry to check status, revocation and key permissions.
     let application = self
       .application(application_id)
-      .ok_or_else(|| {
-        RealtimeAuthError::UnknownApplication(
-          application_id.clone()
-        )
-      })?;
+      .ok_or_else(|| RealtimeAuthError::UnknownApplication(application_id.clone()))?;
 
-    let token = application
-      .token_verifier
-      .verify(access_token)?;
+    let token = application.token_verifier.verify(access_token)?;
 
-    Ok(RealtimeAccess {
-      application,
-      token,
-    })
+    Ok(RealtimeAccess { application, token })
   }
 
   pub fn issue_access_token(
@@ -77,13 +73,11 @@ impl Realtime {
     application_id: &ApplicationId,
     client_id: String,
     capability: &TokenCapability,
-    ttl_seconds: u64
+    ttl_seconds: u64,
   ) -> Result<String, RealtimeAuthError> {
     let application = self
       .application(application_id)
-      .ok_or_else(|| {
-        RealtimeAuthError::UnknownApplication(application_id.clone())
-      })?;
+      .ok_or_else(|| RealtimeAuthError::UnknownApplication(application_id.clone()))?;
 
     let token = application
       .token_issuer

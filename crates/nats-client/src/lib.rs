@@ -19,9 +19,9 @@ mod validation;
 pub use client::NatsClient;
 pub use config::{ConsumerConfig, NatsConfig, StreamConfig, StreamLimits};
 pub use error::{
-    AckError, ConnectError, ConsumerConfigError, MessageMetadataError, NatsConfigError,
-    PublishError, PublishMessageError, ReceiveError, StreamConfigError, StreamLimitsError,
-    StreamSetupError, SubscribeError,
+  AckError, ConnectError, ConsumerConfigError, MessageMetadataError, NatsConfigError, PublishError,
+  PublishMessageError, ReceiveError, StreamConfigError, StreamLimitsError, StreamSetupError,
+  SubscribeError,
 };
 pub use message::NatsMessage;
 pub use publish_ack::PublishAck;

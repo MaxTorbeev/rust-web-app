@@ -1,19 +1,16 @@
-use jsonwebtoken::{get_current_timestamp, EncodingKey, Header, encode, Algorithm};
 use crate::{TokenCapability, TokenClaims, TokenIssueError};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode, get_current_timestamp};
 
 pub struct TokenAccessIssuer {
   key_name: String,
-  encoding_key: EncodingKey
+  encoding_key: EncodingKey,
 }
 
 impl TokenAccessIssuer {
-  pub fn new(
-    key_name: impl Into<String>,
-    key_secret: impl AsRef<[u8]>
-  ) -> Self {
+  pub fn new(key_name: impl Into<String>, key_secret: impl AsRef<[u8]>) -> Self {
     Self {
       key_name: key_name.into(),
-      encoding_key: EncodingKey::from_secret(key_secret.as_ref())
+      encoding_key: EncodingKey::from_secret(key_secret.as_ref()),
     }
   }
 
@@ -21,7 +18,7 @@ impl TokenAccessIssuer {
     &self,
     client_id: Option<String>,
     capability: &TokenCapability,
-    ttl_seconds: u64
+    ttl_seconds: u64,
   ) -> Result<String, TokenIssueError> {
     if client_id.as_deref() == Some("") {
       return Err(TokenIssueError::EmptyClientId);
@@ -40,11 +37,7 @@ impl TokenAccessIssuer {
 
     header.kid = Some(self.key_name.clone());
 
-    encode(
-      &header,
-      &claims,
-      &self.encoding_key,
-    ).map_err(TokenIssueError::TokenEncoding)
+    encode(&header, &claims, &self.encoding_key).map_err(TokenIssueError::TokenEncoding)
   }
 }
 
@@ -69,11 +62,7 @@ mod tests {
     const TTL_SECONDS: u64 = 3600;
 
     let token = TokenAccessIssuer::new(KEY_NAME, KEY_SECRET)
-      .issue(
-        Some("client-123".to_owned()),
-        &capability(),
-        TTL_SECONDS,
-      )
+      .issue(Some("client-123".to_owned()), &capability(), TTL_SECONDS)
       .expect("valid claims must produce a JWT");
 
     let header = decode_header(&token).expect("issued JWT must have a valid header");
@@ -99,8 +88,8 @@ mod tests {
   /// Проверяет, что issuer не создаёт JWT с присутствующим, но пустым `client_id`.
   #[test]
   fn rejects_empty_client_id() {
-    let result = TokenAccessIssuer::new(KEY_NAME, KEY_SECRET)
-      .issue(Some(String::new()), &capability(), 3600);
+    let result =
+      TokenAccessIssuer::new(KEY_NAME, KEY_SECRET).issue(Some(String::new()), &capability(), 3600);
 
     assert!(matches!(result, Err(TokenIssueError::EmptyClientId)));
   }

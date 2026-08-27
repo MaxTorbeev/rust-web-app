@@ -1,5 +1,5 @@
-use crate::{ChannelMessageSubmitted, ProtocolMessage};
 use crate::transport::SocketContext;
+use crate::{ChannelMessageSubmitted, ProtocolMessage};
 
 pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
   match message.channel.as_deref() {
@@ -23,7 +23,7 @@ pub async fn message(message: ProtocolMessage, context: &SocketContext<'_>) -> P
           ProtocolMessage::nack(message.msg_serial)
         }
       }
-    },
-    None => ProtocolMessage::nack(message.msg_serial)
+    }
+    None => ProtocolMessage::nack(message.msg_serial),
   }
 }

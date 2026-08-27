@@ -1,11 +1,11 @@
-use std::time::Duration;
-use axum::extract::ws::{WebSocket, Message};
+use crate::PreparedFrame;
+use crate::transport::{SessionError, ShutdownListener, WriterPolicy};
+use axum::extract::ws::{Message, WebSocket};
 use futures_util::SinkExt;
 use futures_util::stream::SplitSink;
+use std::time::Duration;
 use tokio::sync::mpsc::Receiver;
 use tokio::task::{JoinError, JoinHandle};
-use crate::{PreparedFrame};
-use crate::transport::{SessionError, ShutdownListener, WriterPolicy};
 
 type WriterJoinResult = Result<Result<(), axum::Error>, JoinError>;
 
@@ -14,7 +14,6 @@ pub struct WebSocketWriter {
 }
 
 impl WebSocketWriter {
-
   /// Spawn new web socket writer event loop task
   ///
   /// Ответ будет:
@@ -27,9 +26,7 @@ impl WebSocketWriter {
   ) -> Self {
     let task = tokio::spawn(async move {
       while let Some(frame) = receiver.recv().await {
-        sender
-          .send(frame.into_websocket_message())
-          .await?;
+        sender.send(frame.into_websocket_message()).await?;
       }
 
       // Очередь закрыта и полностью обработана.
@@ -42,18 +39,14 @@ impl WebSocketWriter {
   pub(crate) async fn finish(
     &mut self,
     policy: WriterPolicy,
-    shutdown: &mut ShutdownListener
+    shutdown: &mut ShutdownListener,
   ) -> Result<(), SessionError> {
     match policy {
-      WriterPolicy::DrainUntilShutdown => {
-        self.drain_until_shutdown(shutdown).await
-      }
+      WriterPolicy::DrainUntilShutdown => self.drain_until_shutdown(shutdown).await,
 
-      WriterPolicy::Abort => {
-        self.abort_and_wait().await
-      }
+      WriterPolicy::Abort => self.abort_and_wait().await,
 
-      WriterPolicy::AlreadyStopped => Ok(())
+      WriterPolicy::AlreadyStopped => Ok(()),
     }
   }
 
@@ -104,14 +97,10 @@ impl WebSocketWriter {
       Ok(Ok(())) => Ok(()),
 
       // Task завершилась без panic, но запись в WebSocket вернула ошибку.
-      Ok(Err(error)) => {
-        Err(SessionError::Write(error))
-      }
+      Ok(Err(error)) => Err(SessionError::Write(error)),
 
       // Writer task была отменена или завершилась panic.
-      Err(error) => {
-        Err(SessionError::WriterTaskFailed(error))
-      }
+      Err(error) => Err(SessionError::WriterTaskFailed(error)),
     }
   }
 }
@@ -119,16 +108,14 @@ impl WebSocketWriter {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::transport::shutdown_channel;
   use std::future::pending;
   use std::time::Duration;
   use tokio::time::timeout;
-  use crate::transport::shutdown_channel;
 
   fn pending_writer() -> WebSocketWriter {
     WebSocketWriter {
-      task: tokio::spawn(
-        pending::<Result<(), axum::Error>>()
-      ),
+      task: tokio::spawn(pending::<Result<(), axum::Error>>()),
     }
   }
 
@@ -138,13 +125,9 @@ mod tests {
 
   #[test]
   fn maps_websocket_write_error() {
-    let write_error = axum::Error::new(
-      std::io::Error::other("websocket write failed")
-    );
+    let write_error = axum::Error::new(std::io::Error::other("websocket write failed"));
 
-    let result = WebSocketWriter::map_join_result(
-      Ok(Err(write_error))
-    );
+    let result = WebSocketWriter::map_join_result(Ok(Err(write_error)));
 
     assert!(matches!(result, Err(SessionError::Write(_))));
   }
@@ -167,10 +150,7 @@ mod tests {
     let (shutdown_trigger, mut shutdown_listener) = shutdown_channel();
 
     let result = {
-      let finish = writer.finish(
-        WriterPolicy::DrainUntilShutdown,
-        &mut shutdown_listener,
-      );
+      let finish = writer.finish(WriterPolicy::DrainUntilShutdown, &mut shutdown_listener);
 
       // Закрепить finish (future) в памяти
       tokio::pin!(finish);
@@ -189,12 +169,15 @@ mod tests {
       shutdown_trigger.request();
 
       timeout(Duration::from_secs(1), &mut finish)
-      .await
-      .expect("shutdown must stop a blocked writer")
+        .await
+        .expect("shutdown must stop a blocked writer")
     };
 
     assert!(result.is_ok(), "an expected writer abort is not an error");
-    assert!(writer.task.is_finished(), "the blocked writer must be stopped");
+    assert!(
+      writer.task.is_finished(),
+      "the blocked writer must be stopped"
+    );
   }
 
   #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -204,16 +187,13 @@ mod tests {
     let (_shutdown_trigger, mut shutdown_listener) = shutdown_channel();
 
     let result = writer
-      .finish(
-        WriterPolicy::DrainUntilShutdown,
-        &mut shutdown_listener,
-      )
+      .finish(WriterPolicy::DrainUntilShutdown, &mut shutdown_listener)
       .await;
 
-    assert!(matches!(
-      result,
-      Err(SessionError::WriterDrainTimedOut),
-    ));
-    assert!(writer.task.is_finished(), "the timed-out writer must be stopped");
+    assert!(matches!(result, Err(SessionError::WriterDrainTimedOut),));
+    assert!(
+      writer.task.is_finished(),
+      "the timed-out writer must be stopped"
+    );
   }
 }

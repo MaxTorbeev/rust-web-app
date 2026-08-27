@@ -1,12 +1,18 @@
-use std::sync::Arc;
-use axum::extract::ws::WebSocket;
-use futures_util::StreamExt;
-use tokio::sync::{mpsc};
-use tokio::sync::mpsc::Receiver;
-use event_bus::EventBus;
-use crate::{Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage, RealtimeApplication};
-use crate::transport::{shutdown_channel, EndReason, Heartbeat, ShutdownListener, WebSocketWriter, WriterPolicy, SessionError};
 use crate::transport::protocol_reader::ProtocolReader;
+use crate::transport::{
+  EndReason, Heartbeat, SessionError, ShutdownListener, WebSocketWriter, WriterPolicy,
+  shutdown_channel,
+};
+use crate::{
+  Connection, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage,
+  RealtimeApplication,
+};
+use axum::extract::ws::WebSocket;
+use event_bus::EventBus;
+use futures_util::StreamExt;
+use std::sync::Arc;
+use tokio::sync::mpsc;
+use tokio::sync::mpsc::Receiver;
 
 const OUTBOUND_QUEUE_CAPACITY: usize = 128;
 
@@ -28,16 +34,9 @@ impl WebSocketSession {
     application: Arc<RealtimeApplication>,
     event_bus: Arc<EventBus>,
   ) -> Self {
-    let (
-      websocket_sender,
-      websocket_receiver,
-    ) = socket.split();
+    let (websocket_sender, websocket_receiver) = socket.split();
 
-    let (
-      sender,
-      receiver,
-      shutdown_listener
-    ) = Self::outbound_channel();
+    let (sender, receiver, shutdown_listener) = Self::outbound_channel();
 
     let reader = ProtocolReader::new(websocket_receiver);
     let writer = WebSocketWriter::spawn(receiver, websocket_sender);
@@ -50,7 +49,7 @@ impl WebSocketSession {
       reader,
       writer,
       heartbeat: None,
-      event_bus
+      event_bus,
     }
   }
 
@@ -61,8 +60,8 @@ impl WebSocketSession {
         self.heartbeat = Some(Heartbeat::spawn(&self.sender, &self.application));
 
         self.wait_for_end().await
-      },
-      Err(e) => EndReason::ProtocolFailed(e)
+      }
+      Err(e) => EndReason::ProtocolFailed(e),
     };
 
     self.finish(end_reason).await
@@ -83,7 +82,10 @@ impl WebSocketSession {
     }
 
     // Удаляем соединение из всех channels и presence и прочее.
-    self.application.disconnect_connection(&self.connection.id).await;
+    self
+      .application
+      .disconnect_connection(&self.connection.id)
+      .await;
 
     // Очистить структуру отправителя
     drop(self.sender);
@@ -100,7 +102,10 @@ impl WebSocketSession {
         // Если writer уже завершился с собственной ошибкой,
         // логируем её, но возвращаем первичную ошибку session.
         if let Err(e) = writer_result {
-          tracing::error!(?e, "writer also failed while websocket session was stopping");
+          tracing::error!(
+            ?e,
+            "writer also failed while websocket session was stopping"
+          );
         }
 
         Err(session_error)
@@ -111,18 +116,11 @@ impl WebSocketSession {
   fn outbound_channel() -> (OutboundSender, Receiver<PreparedFrame>, ShutdownListener) {
     let (shutdown_trigger, shutdown_listener) = shutdown_channel();
 
-    let (
-      queue_sender,
-      queue_receiver
-    ) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
+    let (queue_sender, queue_receiver) = mpsc::channel::<PreparedFrame>(OUTBOUND_QUEUE_CAPACITY);
 
     let sender = OutboundSender::new(queue_sender, shutdown_trigger);
 
-    (
-      sender,
-      queue_receiver,
-      shutdown_listener,
-    )
+    (sender, queue_receiver, shutdown_listener)
   }
 
   /// Отправить сообщение о том, что пользователь успешно соединился
@@ -167,8 +165,7 @@ mod tests {
 
   #[tokio::test(flavor = "current_thread")]
   async fn outbound_channel_is_bounded_and_propagates_shutdown() {
-    let (sender, _receiver, mut shutdown_listener) =
-      WebSocketSession::outbound_channel();
+    let (sender, _receiver, mut shutdown_listener) = WebSocketSession::outbound_channel();
 
     // The session queue must reject new frames once all bounded slots are used.
     for _ in 0..OUTBOUND_QUEUE_CAPACITY {
@@ -186,10 +183,7 @@ mod tests {
     sender.request_shutdown();
     sender.request_shutdown();
 
-    let requested = timeout(
-      Duration::from_secs(1),
-      shutdown_listener.requested(),
-    )
+    let requested = timeout(Duration::from_secs(1), shutdown_listener.requested())
       .await
       .expect("shutdown listener must observe the sender signal");
 

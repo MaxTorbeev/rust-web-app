@@ -8,40 +8,35 @@ use axum::extract::{Path, State};
 use std::sync::Arc;
 
 pub async fn access_token(
-    Path(application_id): Path<String>,
-    State(realtime): State<Arc<Realtime>>,
-    Json(payload): Json<AccessTokenRequest>,
+  Path(application_id): Path<String>,
+  State(realtime): State<Arc<Realtime>>,
+  Json(payload): Json<AccessTokenRequest>,
 ) -> Result<ApiResponse<AccessTokenResponse>, ApiError> {
-    // TODO(security): WARNING: this endpoint trusts the caller-provided client_id.
-    // Require an authenticated user/application and authorize the requested identity.
-    let ttl_seconds = 60;
+  // TODO(security): WARNING: this endpoint trusts the caller-provided client_id.
+  // Require an authenticated user/application and authorize the requested identity.
+  let ttl_seconds = 60;
 
-    let application_id = ApplicationId::new(application_id);
-    let client_id = payload.client_id;
+  let application_id = ApplicationId::new(application_id);
+  let client_id = payload.client_id;
 
-    // TODO(security): WARNING: every caller currently receives wildcard permissions.
-    // Derive the narrowest capability from the authenticated product/user permissions.
-    let capability = r#"{"*": ["publish", "subscribe", "presence"]}"#
-        .parse::<TokenCapability>()
-        .expect("static realtime capability must be valid");
+  // TODO(security): WARNING: every caller currently receives wildcard permissions.
+  // Derive the narrowest capability from the authenticated product/user permissions.
+  let capability = r#"{"*": ["publish", "subscribe", "presence"]}"#
+    .parse::<TokenCapability>()
+    .expect("static realtime capability must be valid");
 
-    let jwt = realtime
-        .issue_access_token(
-            &application_id,
-            client_id.clone(),
-            &capability,
-            ttl_seconds,
-        )
-        .map_err(|_| ApiError::unauthorized("Unauthorized"))?;
+  let jwt = realtime
+    .issue_access_token(&application_id, client_id.clone(), &capability, ttl_seconds)
+    .map_err(|_| ApiError::unauthorized("Unauthorized"))?;
 
-    let app_id = application_id.as_str();
+  let app_id = application_id.as_str();
 
-    let response = AccessTokenResponse {
-        application_id: app_id.to_string(),
-        client_id,
-        jwt,
-        ttl_seconds,
-    };
+  let response = AccessTokenResponse {
+    application_id: app_id.to_string(),
+    client_id,
+    jwt,
+    ttl_seconds,
+  };
 
-    Ok(ApiResponse::new(response))
+  Ok(ApiResponse::new(response))
 }

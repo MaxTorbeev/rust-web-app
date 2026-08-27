@@ -5,7 +5,7 @@ pub struct InvalidApplicationKeyName;
 
 pub struct ApplicationKeyName {
   application_id: ApplicationId,
-  key_id: String
+  key_id: String,
 }
 
 impl ApplicationKeyName {
@@ -16,7 +16,10 @@ impl ApplicationKeyName {
 
 impl std::fmt::Display for InvalidApplicationKeyName {
   fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(formatter, "application key name must have format <application_id>.<key_id>")
+    write!(
+      formatter,
+      "application key name must have format <application_id>.<key_id>"
+    )
   }
 }
 
@@ -26,14 +29,9 @@ impl std::str::FromStr for ApplicationKeyName {
   type Err = InvalidApplicationKeyName;
 
   fn from_str(value: &str) -> Result<Self, Self::Err> {
-    let (application_id, key_id) = value
-      .split_once('.')
-      .ok_or(InvalidApplicationKeyName)?;
+    let (application_id, key_id) = value.split_once('.').ok_or(InvalidApplicationKeyName)?;
 
-    if application_id.is_empty()
-      || key_id.is_empty()
-      || key_id.contains('.')
-    {
+    if application_id.is_empty() || key_id.is_empty() || key_id.contains('.') {
       return Err(InvalidApplicationKeyName);
     }
 

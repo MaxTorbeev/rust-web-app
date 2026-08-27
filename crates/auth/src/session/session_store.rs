@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use crate::session::session::Session;
 use crate::{SessionError, Token};
 use redis_client::RedisClient;
-use crate::session::session::Session;
+use std::sync::Arc;
 
 pub struct SessionStore {
   redis: Arc<RedisClient>,

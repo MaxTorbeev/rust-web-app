@@ -5,5 +5,5 @@ use uuid::Uuid;
 #[serde(rename_all = "camelCase")]
 pub struct BroadcastMessageResponse {
   pub accepted: bool,
-  pub event_id: Uuid
+  pub event_id: Uuid,
 }

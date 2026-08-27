@@ -1,5 +1,5 @@
-use serde::Serialize;
 use crate::UserIdentity;
+use serde::Serialize;
 
 #[derive(Serialize)]
 pub struct LoginResponse {
@@ -13,7 +13,7 @@ impl LoginResponse {
     Self {
       token_type: "Bearer".to_string(),
       access_token,
-      user
+      user,
     }
   }
 }

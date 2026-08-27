@@ -1,5 +1,5 @@
-mod realtime_config;
 mod config_error;
+mod realtime_config;
 
-pub use realtime_config::*;
 pub use config_error::*;
+pub use realtime_config::*;

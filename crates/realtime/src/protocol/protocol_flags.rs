@@ -9,7 +9,6 @@ bitflags! {
   }
 }
 
-
 // #[cfg(test)]
 // mod tests {
 //   use super::*;

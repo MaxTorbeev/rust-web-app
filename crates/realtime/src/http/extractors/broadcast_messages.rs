@@ -1,12 +1,12 @@
-use axum::extract::{FromRequest, Request};
-use axum::extract::rejection::JsonRejection;
-use axum::http::{StatusCode};
+use crate::requests::BroadcastMessage;
+use api_response::{ApiMessage, ApiResponse};
 use axum::Json;
+use axum::extract::rejection::JsonRejection;
+use axum::extract::{FromRequest, Request};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use validator::{Validate, ValidationErrors};
-use api_response::{ApiMessage, ApiResponse};
-use crate::requests::BroadcastMessage;
 
 /// Декодированные сообщения одного HTTP publish-запроса.
 #[derive(Debug, Deserialize, Serialize, Validate)]
@@ -37,7 +37,7 @@ enum OneOrMany<T> {
 
 pub enum BroadcastMessagesRejection {
   Json(JsonRejection),
-  Validation(ValidationErrors)
+  Validation(ValidationErrors),
 }
 
 impl From<JsonRejection> for BroadcastMessagesRejection {
@@ -55,9 +55,7 @@ impl From<ValidationErrors> for BroadcastMessagesRejection {
 impl IntoResponse for BroadcastMessagesRejection {
   fn into_response(self) -> Response {
     match self {
-      Self::Json(error) => {
-        error.into_response()
-      }
+      Self::Json(error) => error.into_response(),
 
       Self::Validation(errors) => {
         tracing::debug!(
@@ -70,13 +68,14 @@ impl IntoResponse for BroadcastMessagesRejection {
           Json(ApiResponse::new(ApiMessage::new(
             "message batch must not be empty".to_owned(),
           ))),
-        ).into_response()
+        )
+          .into_response()
       }
     }
   }
 }
 
-impl <T> OneOrMany<T> {
+impl<T> OneOrMany<T> {
   fn into_vec(self) -> Vec<T> {
     match self {
       Self::One(message) => vec![message],
@@ -85,24 +84,17 @@ impl <T> OneOrMany<T> {
   }
 }
 
-impl <S> FromRequest<S> for BroadcastMessages
+impl<S> FromRequest<S> for BroadcastMessages
 where
-  S: Send + Sync
+  S: Send + Sync,
 {
   type Rejection = BroadcastMessagesRejection;
 
-  async fn from_request(
-    req: Request,
-    state: &S
-  ) -> Result<Self, Self::Rejection> {
-    let Json(payload) =
-      Json::<OneOrMany<BroadcastMessage>>::from_request(
-        req,
-        state,
-      ).await?;
+  async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
+    let Json(payload) = Json::<OneOrMany<BroadcastMessage>>::from_request(req, state).await?;
 
     let messages = Self {
-      messages: payload.into_vec()
+      messages: payload.into_vec(),
     };
 
     messages.validate()?;

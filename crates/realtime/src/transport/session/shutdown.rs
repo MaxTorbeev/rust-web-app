@@ -17,25 +17,16 @@ impl ShutdownTrigger {
 
 impl ShutdownListener {
   pub fn new(receiver: watch::Receiver<bool>) -> Self {
-    Self {
-      receiver
-    }
+    Self { receiver }
   }
 
   pub(crate) async fn requested(&mut self) -> bool {
-    self
-      .receiver
-      .wait_for(|requested| *requested)
-      .await
-      .is_ok()
+    self.receiver.wait_for(|requested| *requested).await.is_ok()
   }
 }
 
 pub(crate) fn shutdown_channel() -> (ShutdownTrigger, ShutdownListener) {
   let (sender, receiver) = watch::channel(false);
 
-  (
-    ShutdownTrigger { sender },
-    ShutdownListener { receiver },
-  )
+  (ShutdownTrigger { sender }, ShutdownListener { receiver })
 }

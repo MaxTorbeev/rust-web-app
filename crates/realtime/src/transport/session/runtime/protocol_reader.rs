@@ -1,11 +1,11 @@
-use axum::Error;
-use axum::extract::ws::WebSocket;
-use futures_util::stream::SplitStream;
+use crate::transport::{ProtocolOutcome, SocketContext, handle_protocol_message};
 use crate::{Connection, OutboundSendError, OutboundSender, ProtocolMessage, RealtimeApplication};
-use crate::transport::{handle_protocol_message, ProtocolOutcome, SocketContext};
-use axum::extract::ws::{Message};
-use futures_util::StreamExt;
+use axum::Error;
+use axum::extract::ws::Message;
+use axum::extract::ws::WebSocket;
 use event_bus::EventBus;
+use futures_util::StreamExt;
+use futures_util::stream::SplitStream;
 
 pub(crate) type ReaderResult = Result<ReaderEndReason, ReaderError>;
 
@@ -19,20 +19,18 @@ pub(crate) enum ReaderEndReason {
   /// Был сигнал на закрытие сокетов
   SocketClosed,
   /// Стрим завешен штатно
-  StreamEnded
+  StreamEnded,
 }
 
 #[derive(Debug)]
 pub(crate) enum ReaderError {
   Read(Error),
-  Outbound(OutboundSendError)
+  Outbound(OutboundSendError),
 }
 
 impl ProtocolReader {
   pub fn new(stream: SplitStream<WebSocket>) -> Self {
-    Self {
-      stream
-    }
+    Self { stream }
   }
   pub(in crate::transport::session) async fn run(
     &mut self,
@@ -66,7 +64,7 @@ impl ProtocolReader {
                 return Err(ReaderError::Outbound(e));
               }
 
-              continue
+              continue;
             }
           };
 
@@ -80,7 +78,7 @@ impl ProtocolReader {
 
           let ProtocolOutcome {
             replies,
-            disconnect
+            disconnect,
           } = handle_protocol_message(message, &context).await;
 
           for reply in replies {

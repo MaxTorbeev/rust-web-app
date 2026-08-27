@@ -1,6 +1,9 @@
-use std::sync::Arc;
+use crate::{
+  ApplicationId, ApplicationSettings, ChannelHub, Connection, ConnectionId, PresenceHub,
+  ProtocolMessage,
+};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
-use crate::{ApplicationId, ApplicationSettings, ChannelHub, Connection, ConnectionId, PresenceHub, ProtocolMessage};
+use std::sync::Arc;
 
 pub struct RealtimeApplication {
   pub id: ApplicationId,
@@ -15,7 +18,7 @@ impl RealtimeApplication {
   pub fn new(
     id: ApplicationId,
     token_issuer: TokenAccessIssuer,
-    token_verifier: TokenAccessVerifier
+    token_verifier: TokenAccessVerifier,
   ) -> Self {
     Self {
       id,
@@ -33,29 +36,17 @@ impl RealtimeApplication {
 
   /// Removes one connection from channel and presence state
   /// and broadcasts the resulting presence leave messages.
-  pub async fn disconnect_connection(
-    &self,
-    connection_id: &ConnectionId,
-  ) {
-    let leaves = self
-      .presence_hub
-      .disconnect(connection_id)
-      .await;
+  pub async fn disconnect_connection(&self, connection_id: &ConnectionId) {
+    let leaves = self.presence_hub.disconnect(connection_id).await;
 
-    self
-      .channel_hub
-      .disconnect(connection_id)
-      .await;
+    self.channel_hub.disconnect(connection_id).await;
 
     for (channel, presence) in leaves {
       if let Err(error) = self
         .channel_hub
         .broadcast(
           &channel,
-          ProtocolMessage::presence(
-            &channel,
-            vec![presence],
-          ),
+          ProtocolMessage::presence(&channel, vec![presence]),
         )
         .await
       {

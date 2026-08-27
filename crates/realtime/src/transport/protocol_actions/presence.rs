@@ -1,12 +1,16 @@
-use crate::{PresenceAction, ProtocolMessage};
 use crate::transport::SocketContext;
+use crate::{PresenceAction, ProtocolMessage};
 
 pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
   match message.channel.as_deref() {
     Some(channel) => {
       // TODO(security): WARNING: presence operations are not checked against token capability.
       // Require `presence` permission for this channel before mutating presence state.
-      if !context.channel_hub.is_attached(channel, &context.connection.id).await {
+      if !context
+        .channel_hub
+        .is_attached(channel, &context.connection.id)
+        .await
+      {
         ProtocolMessage::nack(message.msg_serial)
       } else {
         let incoming_presence = message.presence.clone().unwrap_or_default();
@@ -14,16 +18,25 @@ pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> 
 
         for presence in incoming_presence {
           let changed = match presence.action.clone() {
-            PresenceAction::Enter => {
-              Some(context.presence_hub.enter(channel, context.connection, presence).await)
-            }
+            PresenceAction::Enter => Some(
+              context
+                .presence_hub
+                .enter(channel, context.connection, presence)
+                .await,
+            ),
             PresenceAction::Update => {
-              context.presence_hub.update(channel, context.connection, presence).await
+              context
+                .presence_hub
+                .update(channel, context.connection, presence)
+                .await
             }
             PresenceAction::Leave => {
-              context.presence_hub.leave(channel, &context.connection.id).await
+              context
+                .presence_hub
+                .leave(channel, &context.connection.id)
+                .await
             }
-            _ => None
+            _ => None,
           };
 
           if let Some(presence) = changed {
@@ -36,7 +49,10 @@ pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> 
         } else {
           if let Err(error) = context
             .channel_hub
-            .broadcast(channel, ProtocolMessage::presence(channel, changed_presence))
+            .broadcast(
+              channel,
+              ProtocolMessage::presence(channel, changed_presence),
+            )
             .await
           {
             tracing::error!(%error, %channel, "failed to broadcast presence change");
@@ -46,6 +62,6 @@ pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> 
         }
       }
     }
-    None => ProtocolMessage::nack(message.msg_serial)
+    None => ProtocolMessage::nack(message.msg_serial),
   }
 }

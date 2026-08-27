@@ -1,6 +1,7 @@
-use std::time::Duration;
 use crate::DedupLease;
+use std::time::Duration;
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum DedupClaim {
   /// Событие сейчас никто не обрабатывает
   /// Handler можно запускать
@@ -10,7 +11,5 @@ pub enum DedupClaim {
   Completed,
   /// Событие уже обрабатывает другой обработчик.
   /// Следует после `retry_after` повторить claim().
-  InProgress {
-    retry_after: Duration,
-  },
+  InProgress { retry_after: Duration },
 }

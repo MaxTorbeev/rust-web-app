@@ -3,34 +3,34 @@ use event_bus::DeliveryClass;
 use crate::error::EventSubjectError;
 
 pub(crate) fn event_subject(
-    prefix: &str,
-    event_name: &str,
-    delivery: DeliveryClass,
+  prefix: &str,
+  event_name: &str,
+  delivery: DeliveryClass,
 ) -> Result<String, EventSubjectError> {
-    if !is_valid_event_name(event_name) {
-        return Err(EventSubjectError::InvalidEventName {
-            event_name: event_name.to_owned(),
-        });
+  if !is_valid_event_name(event_name) {
+    return Err(EventSubjectError::InvalidEventName {
+      event_name: event_name.to_owned(),
+    });
+  }
+
+  let delivery = match delivery {
+    DeliveryClass::AllNodes => "all",
+    DeliveryClass::WorkQueue => "work",
+    DeliveryClass::LocalOnly => {
+      return Err(EventSubjectError::UnsupportedDeliveryClass);
     }
+  };
 
-    let delivery = match delivery {
-        DeliveryClass::AllNodes => "all",
-        DeliveryClass::WorkQueue => "work",
-        DeliveryClass::LocalOnly => {
-            return Err(EventSubjectError::UnsupportedDeliveryClass);
-        }
-    };
-
-    Ok(format!("{prefix}.{delivery}.{event_name}"))
+  Ok(format!("{prefix}.{delivery}.{event_name}"))
 }
 
 pub(crate) fn is_valid_subject_token(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .bytes()
-            .all(|character| character.is_ascii_alphanumeric() || matches!(character, b'-' | b'_'))
+  !value.is_empty()
+    && value
+      .bytes()
+      .all(|character| character.is_ascii_alphanumeric() || matches!(character, b'-' | b'_'))
 }
 
 fn is_valid_event_name(event_name: &str) -> bool {
-    !event_name.is_empty() && event_name.split('.').all(is_valid_subject_token)
+  !event_name.is_empty() && event_name.split('.').all(is_valid_subject_token)
 }

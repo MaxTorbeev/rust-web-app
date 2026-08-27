@@ -1,3 +1,1 @@
-pub async fn health () {
-
-}
+pub async fn health() {}

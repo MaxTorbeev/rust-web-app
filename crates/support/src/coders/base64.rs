@@ -1,6 +1,6 @@
-use base64::{Engine};
-use base64::engine::general_purpose::STANDARD;
 use crate::Base64Error;
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
 
 pub fn decode(value: &str) -> Result<Vec<u8>, Base64Error> {
   STANDARD

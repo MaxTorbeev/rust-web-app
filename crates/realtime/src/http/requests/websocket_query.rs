@@ -10,5 +10,5 @@ pub enum WebsocketFormat {
 pub struct WebSocketQuery {
   pub access_token: String,
   pub format: WebsocketFormat,
-  pub heartbeats: bool
+  pub heartbeats: bool,
 }

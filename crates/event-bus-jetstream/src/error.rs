@@ -4,27 +4,27 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[non_exhaustive]
 pub enum JetStreamPublisherConfigError {
-    #[error("missing required environment variable `{variable}`")]
-    MissingEnvironmentVariable {
-        variable: &'static str,
+  #[error("missing required environment variable `{variable}`")]
+  MissingEnvironmentVariable {
+    variable: &'static str,
 
-        #[source]
-        source: std::env::VarError,
-    },
+    #[source]
+    source: std::env::VarError,
+  },
 
-    #[error("invalid value {value:?} for `{component}`: {reason}")]
-    InvalidNamespaceComponent {
-        component: &'static str,
-        value: String,
-        reason: &'static str,
-    },
+  #[error("invalid value {value:?} for `{component}`: {reason}")]
+  InvalidNamespaceComponent {
+    component: &'static str,
+    value: String,
+    reason: &'static str,
+  },
 }
 
 #[derive(Debug, Error)]
 pub(crate) enum EventSubjectError {
-    #[error("event name `{event_name}` is not a valid NATS subject suffix")]
-    InvalidEventName { event_name: String },
+  #[error("event name `{event_name}` is not a valid NATS subject suffix")]
+  InvalidEventName { event_name: String },
 
-    #[error("LocalOnly events cannot be published to JetStream")]
-    UnsupportedDeliveryClass,
+  #[error("LocalOnly events cannot be published to JetStream")]
+  UnsupportedDeliveryClass,
 }

@@ -1,11 +1,9 @@
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use sha2::Sha256;
 use sha2::Digest;
+use sha2::Sha256;
 
-pub struct Token {
-
-}
+pub struct Token {}
 
 impl Token {
   pub fn generate() -> Result<String, getrandom::Error> {

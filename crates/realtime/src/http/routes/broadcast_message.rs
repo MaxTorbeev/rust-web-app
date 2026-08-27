@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use axum::extract::{Path, State};
-use api_response::{ApiError, ApiResponse};
-use event_bus::EventBus;
-use crate::{ChannelMessageSubmitted, Message};
 use crate::extractors::{BroadcastApplication, BroadcastMessages};
 use crate::responses::BroadcastMessageResponse;
+use crate::{ChannelMessageSubmitted, Message};
+use api_response::{ApiError, ApiResponse};
+use axum::extract::{Path, State};
+use event_bus::EventBus;
+use std::sync::Arc;
 
 pub async fn broadcast_message(
   Path(channel): Path<String>,
@@ -12,8 +12,7 @@ pub async fn broadcast_message(
   State(event_bus): State<Arc<EventBus>>,
   payloads: BroadcastMessages,
 ) -> Result<ApiResponse<BroadcastMessageResponse>, ApiError> {
-
-  let messages:Vec<Message> = payloads
+  let messages: Vec<Message> = payloads
     .into_inner()
     .into_iter()
     .map(|payload| Message {

@@ -8,12 +8,12 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 #[error("failed to publish JetStream message: {source}")]
 pub struct PublishError {
-    #[source]
-    source: DriverPublishError,
+  #[source]
+  source: DriverPublishError,
 }
 
 impl PublishError {
-    pub(crate) fn from_driver(source: DriverPublishError) -> Self {
-        Self { source }
-    }
+  pub(crate) fn from_driver(source: DriverPublishError) -> Self {
+    Self { source }
+  }
 }

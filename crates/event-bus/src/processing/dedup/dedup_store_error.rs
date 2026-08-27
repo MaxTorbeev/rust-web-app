@@ -26,7 +26,6 @@ pub enum DedupStoreError {
 }
 
 impl DedupStoreError {
-  
   /// Оборачивает ошибку конкретного хранилища.
   pub fn backend(error: impl std::error::Error + Send + Sync + 'static) -> Self {
     Self::Backend {

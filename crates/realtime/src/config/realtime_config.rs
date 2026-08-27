@@ -8,8 +8,7 @@ pub struct RealtimeConfig {
 
 impl RealtimeConfig {
   pub fn from_env() -> Result<Self, ConfigError> {
-    let credentials = std::env::var("APP_REALTIME_API_KEY")
-      .map_err(ConfigError::Environment)?;
+    let credentials = std::env::var("APP_REALTIME_API_KEY").map_err(ConfigError::Environment)?;
 
     Self::parse(&credentials)
   }
@@ -28,9 +27,7 @@ impl RealtimeConfig {
     }
 
     Ok(Self {
-      application_id: application_key_name
-        .application_id()
-        .clone(),
+      application_id: application_key_name.application_id().clone(),
       key_name: key_name.to_string(),
       key_secret: key_secret.to_string(),
     })

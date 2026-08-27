@@ -1,6 +1,6 @@
-use auth::{VerifiedToken};
-use support::timestamp::Timestamp;
 use crate::{ApplicationId, ApplicationSettings, ConnectionId, RealtimeApplication};
+use auth::VerifiedToken;
+use support::timestamp::Timestamp;
 
 pub struct Connection {
   pub id: ConnectionId,
@@ -8,7 +8,7 @@ pub struct Connection {
   connection_key: String,
   pub authorization: VerifiedToken,
   pub connected_at: Timestamp,
-  settings: ApplicationSettings
+  settings: ApplicationSettings,
 }
 
 impl Connection {
@@ -46,13 +46,10 @@ impl Connection {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use auth::{TokenAccessIssuer, TokenAccessVerifier};
   use crate::{ConnectionDetails, ProtocolMessage};
+  use auth::{TokenAccessIssuer, TokenAccessVerifier};
 
-  fn test_application(
-    id: &str,
-    settings: ApplicationSettings,
-  ) -> RealtimeApplication {
+  fn test_application(id: &str, settings: ApplicationSettings) -> RealtimeApplication {
     let mut application = RealtimeApplication::new(
       ApplicationId::new(id),
       TokenAccessIssuer::new("test-key", b"test-secret"),
@@ -76,10 +73,7 @@ mod tests {
 
   #[test]
   fn connected_messages_keep_the_connection_key() {
-    let application = test_application(
-      "application-1",
-      ApplicationSettings::default(),
-    );
+    let application = test_application("application-1", ApplicationSettings::default());
     let connection = application.create_connection(test_authorization());
 
     let first = ProtocolMessage::connected(&connection);
@@ -104,10 +98,7 @@ mod tests {
 
   #[test]
   fn connection_keeps_the_creating_application_id() {
-    let application = test_application(
-      "application-1",
-      ApplicationSettings::default(),
-    );
+    let application = test_application("application-1", ApplicationSettings::default());
 
     let connection = application.create_connection(test_authorization());
 
@@ -124,10 +115,7 @@ mod tests {
       connection_state_ttl: 1_005,
       max_idle_interval: 1_006,
     };
-    let mut application = test_application(
-      "application-1",
-      initial_settings.clone(),
-    );
+    let mut application = test_application("application-1", initial_settings.clone());
     let connection = application.create_connection(test_authorization());
 
     // Later application changes must not alter an established connection.
@@ -137,12 +125,18 @@ mod tests {
 
     assert_eq!(details.max_message_size, initial_settings.max_message_size);
     assert_eq!(details.max_inbound_rate, initial_settings.max_inbound_rate);
-    assert_eq!(details.max_outbound_rate, initial_settings.max_outbound_rate);
+    assert_eq!(
+      details.max_outbound_rate,
+      initial_settings.max_outbound_rate
+    );
     assert_eq!(details.max_frame_size, initial_settings.max_frame_size);
     assert_eq!(
       details.connection_state_ttl,
       initial_settings.connection_state_ttl,
     );
-    assert_eq!(details.max_idle_interval, initial_settings.max_idle_interval);
+    assert_eq!(
+      details.max_idle_interval,
+      initial_settings.max_idle_interval
+    );
   }
 }

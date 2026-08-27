@@ -1,7 +1,7 @@
 #[derive(Debug)]
 pub enum ConfigError {
   Environment(std::env::VarError),
-  InvalidApiKeyFormat
+  InvalidApiKeyFormat,
 }
 
 impl std::fmt::Display for ConfigError {
@@ -9,7 +9,7 @@ impl std::fmt::Display for ConfigError {
     match self {
       Self::Environment(error) => {
         write!(fmt, "real time environment error: {}", error)
-      },
+      }
       Self::InvalidApiKeyFormat => {
         write!(fmt, "invalid api key format")
       }

@@ -1,5 +1,5 @@
-use axum::extract::ws::Message as WsMessage;
 use crate::ProtocolMessage;
+use axum::extract::ws::Message as WsMessage;
 
 /// Готовое к отправке сообщение
 #[derive(Clone, Debug)]

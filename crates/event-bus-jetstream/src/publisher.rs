@@ -12,58 +12,58 @@ use crate::subject::event_subject;
 /// A successful publication means that JetStream accepted the envelope into a
 /// matching stream. It does not mean that a consumer processed the event.
 pub struct JetStreamEventPublisher {
-    client: Arc<NatsClient>,
-    config: JetStreamPublisherConfig,
+  client: Arc<NatsClient>,
+  config: JetStreamPublisherConfig,
 }
 
 impl JetStreamEventPublisher {
-    /// Creates a publisher from an already connected client and validated config.
-    pub fn new(client: Arc<NatsClient>, config: JetStreamPublisherConfig) -> Self {
-        Self { client, config }
-    }
+  /// Creates a publisher from an already connected client and validated config.
+  pub fn new(client: Arc<NatsClient>, config: JetStreamPublisherConfig) -> Self {
+    Self { client, config }
+  }
 }
 
 impl EventPublisher for JetStreamEventPublisher {
-    fn publish<'a>(
-        &'a self,
-        message: &'a EventMessage,
-        delivery: DeliveryClass,
-    ) -> EventPublishFuture<'a> {
-        Box::pin(async move {
-            let outgoing = prepare_message(&self.config, message, delivery)?;
-            let ack = self
-                .client
-                .publish(outgoing)
-                .await
-                .map_err(EventBusError::publisher)?;
+  fn publish<'a>(
+    &'a self,
+    message: &'a EventMessage,
+    delivery: DeliveryClass,
+  ) -> EventPublishFuture<'a> {
+    Box::pin(async move {
+      let outgoing = prepare_message(&self.config, message, delivery)?;
+      let ack = self
+        .client
+        .publish(outgoing)
+        .await
+        .map_err(EventBusError::publisher)?;
 
-            tracing::debug!(
-                event_id = %message.event_id(),
-                event_name = message.event_name(),
-                delivery = ?delivery,
-                stream = %ack.stream,
-                sequence = ack.sequence,
-                duplicate = ack.duplicate,
-                "event accepted by JetStream",
-            );
+      tracing::debug!(
+          event_id = %message.event_id(),
+          event_name = message.event_name(),
+          delivery = ?delivery,
+          stream = %ack.stream,
+          sequence = ack.sequence,
+          duplicate = ack.duplicate,
+          "event accepted by JetStream",
+      );
 
-            Ok(())
-        })
-    }
+      Ok(())
+    })
+  }
 }
 
 pub(crate) fn prepare_message(
-    config: &JetStreamPublisherConfig,
-    message: &EventMessage,
-    delivery: DeliveryClass,
+  config: &JetStreamPublisherConfig,
+  message: &EventMessage,
+  delivery: DeliveryClass,
 ) -> Result<PublishMessage, EventBusError> {
-    let subject = event_subject(config.subject_prefix(), message.event_name(), delivery)
-        .map_err(EventBusError::publisher)?;
+  let subject = event_subject(config.subject_prefix(), message.event_name(), delivery)
+    .map_err(EventBusError::publisher)?;
 
-    let payload = Bytes::from(message.to_bytes()?);
+  let payload = Bytes::from(message.to_bytes()?);
 
-    PublishMessage::new(subject, payload)
-        .map_err(EventBusError::publisher)?
-        .message_id(message.event_id().to_string())
-        .map_err(EventBusError::publisher)
+  PublishMessage::new(subject, payload)
+    .map_err(EventBusError::publisher)?
+    .message_id(message.event_id().to_string())
+    .map_err(EventBusError::publisher)
 }

@@ -10,23 +10,23 @@ use crate::{DispatchError, EventMessageError};
 /// [`DispatchError`].
 #[derive(Debug, Error)]
 pub enum EventBusError {
-    /// EventMessage не удалось создать или сериализовать до публикации.
-    #[error(transparent)]
-    EventMessage(#[from] EventMessageError),
+  /// EventMessage не удалось создать или сериализовать до публикации.
+  #[error(transparent)]
+  EventMessage(#[from] EventMessageError),
 
-    /// Выбранный publisher не смог подтвердить публикацию.
-    #[error("failed to publish event: {0}")]
-    Publisher(#[source] Box<dyn std::error::Error + Send + Sync>),
+  /// Выбранный publisher не смог подтвердить публикацию.
+  #[error("failed to publish event: {0}")]
+  Publisher(#[source] Box<dyn std::error::Error + Send + Sync>),
 
-    /// Локальный publisher передал envelope dispatcher-у, и локальная обработка
-    /// завершилась ошибкой.
-    #[error(transparent)]
-    Dispatch(#[from] DispatchError),
+  /// Локальный publisher передал envelope dispatcher-у, и локальная обработка
+  /// завершилась ошибкой.
+  #[error(transparent)]
+  Dispatch(#[from] DispatchError),
 }
 
 impl EventBusError {
-    /// Оборачивает ошибку конкретного транспорта или publisher adapter-а.
-    pub fn publisher(error: impl std::error::Error + Send + Sync + 'static) -> Self {
-        Self::Publisher(Box::new(error))
-    }
+  /// Оборачивает ошибку конкретного транспорта или publisher adapter-а.
+  pub fn publisher(error: impl std::error::Error + Send + Sync + 'static) -> Self {
+    Self::Publisher(Box::new(error))
+  }
 }

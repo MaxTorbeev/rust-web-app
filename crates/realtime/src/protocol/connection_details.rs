@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
 use crate::Connection;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConnectionDetails {
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub client_id: Option<String>,
   pub connection_key: String,
   pub max_message_size: u64,

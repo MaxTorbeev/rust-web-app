@@ -6,12 +6,12 @@ use thiserror::Error;
 /// отправки в NATS.
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum PublishMessageError {
-    #[error("invalid JetStream publish subject")]
-    InvalidSubject,
+  #[error("invalid JetStream publish subject")]
+  InvalidSubject,
 
-    #[error("JetStream message ID must not be empty")]
-    EmptyMessageId,
+  #[error("JetStream message ID must not be empty")]
+  EmptyMessageId,
 
-    #[error("JetStream message ID must not contain CR or LF characters")]
-    InvalidMessageId,
+  #[error("JetStream message ID must not contain CR or LF characters")]
+  InvalidMessageId,
 }

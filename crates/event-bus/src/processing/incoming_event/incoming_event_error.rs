@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::{DedupStoreError, DispatchError, ProcessingErrorClass};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum IncomingEventError {

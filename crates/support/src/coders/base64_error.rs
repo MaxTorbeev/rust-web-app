@@ -3,7 +3,7 @@ use base64::DecodeError;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Base64Error {
   InvalidInput,
-  InvalidUtf8
+  InvalidUtf8,
 }
 
 impl From<DecodeError> for Base64Error {

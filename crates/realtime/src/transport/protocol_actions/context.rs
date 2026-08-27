@@ -1,6 +1,6 @@
-use std::sync::Arc;
-use event_bus::EventBus;
 use crate::{ChannelHub, Connection, OutboundSender, PresenceHub};
+use event_bus::EventBus;
+use std::sync::Arc;
 
 pub struct SocketContext<'a> {
   pub connection: &'a Connection,

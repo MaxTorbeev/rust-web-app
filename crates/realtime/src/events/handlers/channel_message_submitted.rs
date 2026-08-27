@@ -51,12 +51,7 @@ pub(super) fn register(
 mod tests {
   use super::*;
   use crate::{ApplicationId, RealtimeConfig};
-  use event_bus::{
-    DispatchError,
-    Event,
-    EventMessage,
-    ProcessingErrorClass,
-  };
+  use event_bus::{DispatchError, Event, EventMessage, ProcessingErrorClass};
 
   fn test_realtime() -> Arc<Realtime> {
     Arc::new(Realtime::from_config(RealtimeConfig {
@@ -78,8 +73,7 @@ mod tests {
   #[tokio::test(flavor = "current_thread")]
   async fn dispatch_without_local_recipients_succeeds() {
     let mut dispatcher = EventDispatcher::new();
-    register(&mut dispatcher, test_realtime())
-      .expect("handler must register");
+    register(&mut dispatcher, test_realtime()).expect("handler must register");
 
     dispatcher
       .dispatch(&message("application-1"))
@@ -90,22 +84,16 @@ mod tests {
   #[tokio::test(flavor = "current_thread")]
   async fn dispatch_reports_unknown_application_as_handler_error() {
     let mut dispatcher = EventDispatcher::new();
-    register(&mut dispatcher, test_realtime())
-      .expect("handler must register");
+    register(&mut dispatcher, test_realtime()).expect("handler must register");
 
-    let result = dispatcher
-      .dispatch(&message("application-2"))
-      .await;
+    let result = dispatcher.dispatch(&message("application-2")).await;
 
     match result {
       Err(DispatchError::Handler { event_name, source }) => {
         assert_eq!(event_name, ChannelMessageSubmitted::NAME);
-        assert_eq!(
-          source.class(),
-          ProcessingErrorClass::Permanent,
-        );
+        assert_eq!(source.class(), ProcessingErrorClass::Permanent,);
         assert!(source.to_string().contains("application-2"));
-      },
+      }
       other => panic!("expected handler error, got {other:?}"),
     }
   }

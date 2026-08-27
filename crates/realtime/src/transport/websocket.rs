@@ -1,14 +1,9 @@
-use std::sync::Arc;
+use crate::transport::{SessionError, WebSocketSession};
+use crate::{Connection, RealtimeApplication, WebsocketConnected, WebsocketDisconnected};
 use axum::extract::ws::WebSocket;
 use event_bus::{EventBus, EventBusError};
+use std::sync::Arc;
 use thiserror::Error;
-use crate::{
-  Connection,
-  RealtimeApplication,
-  WebsocketConnected,
-  WebsocketDisconnected,
-};
-use crate::transport::{SessionError, WebSocketSession};
 
 #[derive(Debug, Error)]
 enum HandleSocketError {
@@ -25,12 +20,7 @@ pub async fn handle_socket(
   application: Arc<RealtimeApplication>,
   event_bus: Arc<EventBus>,
 ) {
-  if let Err(error) = run_socket(
-    socket,
-    connection,
-    application,
-    event_bus,
-  ).await {
+  if let Err(error) = run_socket(socket, connection, application, event_bus).await {
     tracing::error!(%error, "websocket handling failed");
   }
 }
@@ -49,12 +39,7 @@ async fn run_socket(
     })
     .await?;
 
-  let session_result = WebSocketSession::new(
-    socket,
-    connection,
-    application,
-    event_bus.clone(),
-  )
+  let session_result = WebSocketSession::new(socket, connection, application, event_bus.clone())
     .run()
     .await;
 

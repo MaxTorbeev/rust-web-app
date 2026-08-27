@@ -1,6 +1,6 @@
 use crate::OutboundSendError;
-use crate::transport::protocol_reader::{ReaderEndReason, ReaderError, ReaderResult};
 use crate::transport::SessionError;
+use crate::transport::protocol_reader::{ReaderEndReason, ReaderError, ReaderResult};
 
 pub(crate) enum EndReason {
   ReaderEnded(ReaderEndReason),
@@ -14,7 +14,7 @@ pub(crate) enum EndReason {
 pub(crate) enum WriterPolicy {
   DrainUntilShutdown,
   Abort,
-  AlreadyStopped
+  AlreadyStopped,
 }
 
 impl From<ReaderResult> for EndReason {
@@ -29,16 +29,12 @@ impl From<ReaderResult> for EndReason {
 impl EndReason {
   pub(crate) fn writer_policy(&self) -> WriterPolicy {
     match self {
-      Self::ReaderEnded(ReaderEndReason::DisconnectRequested) => {
-        WriterPolicy::DrainUntilShutdown
-      }
+      Self::ReaderEnded(ReaderEndReason::DisconnectRequested) => WriterPolicy::DrainUntilShutdown,
 
       Self::ReaderEnded(ReaderEndReason::SocketClosed | ReaderEndReason::StreamEnded)
       | Self::ReaderFailed(_)
       | Self::ShutdownRequested
-      | Self::ProtocolFailed(_) => {
-        WriterPolicy::Abort
-      }
+      | Self::ProtocolFailed(_) => WriterPolicy::Abort,
 
       Self::WriterStopped(_) => WriterPolicy::AlreadyStopped,
     }
@@ -47,27 +43,18 @@ impl EndReason {
   /// Преобразовать причину остановки в Result
   pub(crate) fn into_result(self) -> Result<(), SessionError> {
     match self {
-      Self::ReaderEnded(_) |
-      Self::ShutdownRequested => Ok(()),
+      Self::ReaderEnded(_) | Self::ShutdownRequested => Ok(()),
 
-      Self::ReaderFailed(error) => {
-        Err(error.into())
-      }
+      Self::ReaderFailed(error) => Err(error.into()),
 
-      Self::ProtocolFailed(error) => {
-        Err(error.into())
-      }
+      Self::ProtocolFailed(error) => Err(error.into()),
 
       // Writer самостоятельно завершился раньше reader.
-      Self::WriterStopped(Ok(())) => {
-        Err(SessionError::WriterStopped)
-      }
+      Self::WriterStopped(Ok(())) => Err(SessionError::WriterStopped),
 
       // Writer завершился с ошибкой раньше reader.
       // Возвращаем исходную ошибку без изменений.
-      Self::WriterStopped(Err(error)) => {
-        Err(error)
-      }
+      Self::WriterStopped(Err(error)) => Err(error),
     }
   }
 }
@@ -95,10 +82,7 @@ mod tests {
         EndReason::from(Err(ReaderError::Outbound(OutboundSendError::QueueFull))),
         WriterPolicy::Abort,
       ),
-      (
-        EndReason::ShutdownRequested,
-        WriterPolicy::Abort,
-      ),
+      (EndReason::ShutdownRequested, WriterPolicy::Abort),
       (
         EndReason::ProtocolFailed(OutboundSendError::QueueClosed),
         WriterPolicy::Abort,
@@ -137,9 +121,7 @@ mod tests {
   #[test]
   fn failed_end_reasons_preserve_the_error_kind() {
     assert!(matches!(
-      EndReason::ReaderFailed(
-        ReaderError::Outbound(OutboundSendError::QueueFull)
-      ).into_result(),
+      EndReason::ReaderFailed(ReaderError::Outbound(OutboundSendError::QueueFull)).into_result(),
       Err(SessionError::Outbound(OutboundSendError::QueueFull)),
     ));
 

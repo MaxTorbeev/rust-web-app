@@ -1,7 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use tokio::sync::{RwLock};
-use support::timestamp::Timestamp;
 use crate::{Connection, ConnectionId, PresenceAction, PresenceMessage};
+use std::collections::{HashMap, HashSet};
+use support::timestamp::Timestamp;
+use tokio::sync::RwLock;
 
 #[derive(Default)]
 struct PresenceHubState {
@@ -21,12 +21,18 @@ impl PresenceHub {
     }
   }
 
-  pub async fn enter(&self, channel: &str, connection: &Connection, presence: PresenceMessage) -> PresenceMessage {
+  pub async fn enter(
+    &self,
+    channel: &str,
+    connection: &Connection,
+    presence: PresenceMessage,
+  ) -> PresenceMessage {
     let mut state = self.state.write().await;
     let channel = channel.to_string();
     let presence = Self::server_presence(connection, presence, PresenceAction::Enter);
 
-    state.members
+    state
+      .members
       .entry(channel.clone())
       .or_default()
       .insert(connection.id.clone(), presence.clone());
@@ -44,14 +50,12 @@ impl PresenceHub {
     &self,
     channel: &str,
     connection: &Connection,
-    presence: PresenceMessage
+    presence: PresenceMessage,
   ) -> Option<PresenceMessage> {
     let mut state = self.state.write().await;
     let update = Self::server_presence(connection, presence, PresenceAction::Update);
 
-    let member = state.members
-      .get_mut(channel)?
-      .get_mut(&connection.id)?;
+    let member = state.members.get_mut(channel)?.get_mut(&connection.id)?;
 
     *member = update.clone();
 
@@ -80,7 +84,8 @@ impl PresenceHub {
       .map(|member| PresenceMessage {
         action: PresenceAction::Present,
         ..member.clone()
-      }).collect()
+      })
+      .collect()
   }
 
   pub async fn disconnect(&self, connection_id: &ConnectionId) -> Vec<(String, PresenceMessage)> {
@@ -106,7 +111,7 @@ impl PresenceHub {
   fn leave_locked(
     state: &mut PresenceHubState,
     channel: &str,
-    connection_id: &ConnectionId
+    connection_id: &ConnectionId,
   ) -> Option<PresenceMessage> {
     let mut should_remove_channel = false;
 
@@ -141,11 +146,10 @@ impl PresenceHub {
     presence.map(Self::leave_presence)
   }
 
-
   fn server_presence(
     connection: &Connection,
     mut presence: PresenceMessage,
-    action: PresenceAction
+    action: PresenceAction,
   ) -> PresenceMessage {
     presence.action = action;
     presence.id = Some(uuid::Uuid::new_v4().to_string());

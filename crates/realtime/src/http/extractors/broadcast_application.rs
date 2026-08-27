@@ -1,13 +1,11 @@
-use std::sync::Arc;
+use crate::{ApplicationKeyName, Realtime, RealtimeApplication};
+use api_response::ApiError;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::header;
-use api_response::ApiError;
+use std::sync::Arc;
 use support::decode_to_string;
-use crate::{ApplicationKeyName, Realtime, RealtimeApplication};
 
-pub struct BroadcastApplication(
-  pub Arc<RealtimeApplication>
-);
+pub struct BroadcastApplication(pub Arc<RealtimeApplication>);
 
 impl<S> FromRequestParts<S> for BroadcastApplication
 where
@@ -33,18 +31,15 @@ where
     let extra = segments.next();
 
     let encoded = match (scheme, encoded, extra) {
-      (Some(scheme), Some(encoded), None)
-      if scheme.eq_ignore_ascii_case("Basic") => encoded,
+      (Some(scheme), Some(encoded), None) if scheme.eq_ignore_ascii_case("Basic") => encoded,
 
       _ => {
-        return Err(
-          ApiError::unauthorized("Invalid Basic credentials")
-        );
+        return Err(ApiError::unauthorized("Invalid Basic credentials"));
       }
     };
 
-    let decoded = decode_to_string(encoded)
-      .map_err(|_| ApiError::unauthorized("Invalid Basic credentials"))?;
+    let decoded =
+      decode_to_string(encoded).map_err(|_| ApiError::unauthorized("Invalid Basic credentials"))?;
 
     let (key_name, _key_secret) = decoded
       .split_once(':')

@@ -1,18 +1,15 @@
+use crate::{OutboundSender, ProtocolMessage, RealtimeApplication};
 use std::time::Duration;
 use tokio::task::JoinHandle;
-use crate::{OutboundSender, ProtocolMessage, RealtimeApplication};
 
 pub struct Heartbeat {
   task: JoinHandle<()>,
 }
 
 impl Heartbeat {
-
   /// Spawn new heartbeat event loop task
   pub fn spawn(sender: &OutboundSender, app: &RealtimeApplication) -> Self {
-    let interval = Duration::from_millis(
-      app.settings.max_idle_interval
-    );
+    let interval = Duration::from_millis(app.settings.max_idle_interval);
 
     let task = tokio::spawn({
       let sender = sender.clone();
@@ -40,7 +37,7 @@ impl Heartbeat {
 
     match self.task.await {
       Ok(()) => {}
-      Err(e) if e.is_cancelled()  => {}
+      Err(e) if e.is_cancelled() => {}
       Err(e) => {
         tracing::error!("Heartbeat task failed: {}", e);
       }
@@ -51,11 +48,11 @@ impl Heartbeat {
 #[cfg(test)]
 mod tests {
   use super::*;
+  use crate::transport::shutdown_channel;
+  use crate::{ApplicationId, ApplicationSettings};
   use auth::{TokenAccessIssuer, TokenAccessVerifier};
   use tokio::sync::mpsc;
   use tokio::time::timeout;
-  use crate::{ApplicationId, ApplicationSettings};
-  use crate::transport::shutdown_channel;
 
   #[tokio::test(flavor = "current_thread")]
   async fn sends_heartbeat_within_max_idle_interval() {
@@ -75,10 +72,7 @@ mod tests {
     let sender = OutboundSender::new(queue_sender, shutdown_trigger);
     let heartbeat = Heartbeat::spawn(&sender, &application);
 
-    let received = timeout(
-      Duration::from_millis(100),
-      queue_receiver.recv(),
-    ).await;
+    let received = timeout(Duration::from_millis(100), queue_receiver.recv()).await;
 
     heartbeat.finish().await;
 

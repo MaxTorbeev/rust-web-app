@@ -1,6 +1,8 @@
-use jsonwebtoken::{decode_header, Algorithm, DecodingKey, Validation, decode, get_current_timestamp};
-use jsonwebtoken::errors::ErrorKind;
 use crate::{TokenCapability, TokenClaims, TokenVerifyError, VerifiedToken};
+use jsonwebtoken::errors::ErrorKind;
+use jsonwebtoken::{
+  Algorithm, DecodingKey, Validation, decode, decode_header, get_current_timestamp,
+};
 
 pub struct TokenAccessVerifier {
   key_name: String,
@@ -9,10 +11,7 @@ pub struct TokenAccessVerifier {
 }
 
 impl TokenAccessVerifier {
-  pub fn new(
-    key_name: impl Into<String>,
-    key_secret: impl AsRef<[u8]>
-  ) -> Self {
+  pub fn new(key_name: impl Into<String>, key_secret: impl AsRef<[u8]>) -> Self {
     let mut validation = Validation::new(Algorithm::HS256);
 
     validation.leeway = 60;
@@ -24,13 +23,12 @@ impl TokenAccessVerifier {
     Self {
       key_name: key_name.into(),
       decoding_key: DecodingKey::from_secret(key_secret.as_ref()),
-      validation
+      validation,
     }
   }
 
   pub fn unverified_key_id(token: &str) -> Result<String, TokenVerifyError> {
-    let header = decode_header(token)
-      .map_err(TokenVerifyError::InvalidToken)?;
+    let header = decode_header(token).map_err(TokenVerifyError::InvalidToken)?;
 
     header.kid.ok_or(TokenVerifyError::MissingKeyId)
   }
@@ -41,12 +39,12 @@ impl TokenAccessVerifier {
     if key_id != self.key_name {
       return Err(TokenVerifyError::UnexpectedKeyId {
         expected: self.key_name.clone(),
-        actual: key_id
+        actual: key_id,
       });
     }
 
-    let token_data = decode::<TokenClaims>(token, &self.decoding_key, &self.validation)
-      .map_err(|error| {
+    let token_data =
+      decode::<TokenClaims>(token, &self.decoding_key, &self.validation).map_err(|error| {
         if matches!(error.kind(), ErrorKind::ExpiredSignature) {
           TokenVerifyError::Expired
         } else {
@@ -57,7 +55,7 @@ impl TokenAccessVerifier {
     let claims = token_data.claims;
 
     if claims.client_id.as_deref() == Some("") {
-      return Err(TokenVerifyError::EmptyClientId)
+      return Err(TokenVerifyError::EmptyClientId);
     }
 
     let now = get_current_timestamp();
@@ -65,21 +63,19 @@ impl TokenAccessVerifier {
     if claims.iat > now.saturating_add(60) {
       return Err(TokenVerifyError::IssuedAtInFuture {
         issued_at: claims.iat,
-        now
+        now,
       });
     }
 
     // TODO(security): WARNING: parsing only validates the capability JSON shape.
     // Every protocol action must also enforce the requested operation and channel.
-    let capability = claims
-      .capability
-      .parse::<TokenCapability>()?;
+    let capability = claims.capability.parse::<TokenCapability>()?;
 
     Ok(VerifiedToken {
       client_id: claims.client_id,
       issued_at: claims.iat,
       expires_at: claims.exp,
-      capability
+      capability,
     })
   }
 }
@@ -87,7 +83,7 @@ impl TokenAccessVerifier {
 #[cfg(test)]
 mod tests {
   use super::*;
-  use jsonwebtoken::{encode, EncodingKey, Header};
+  use jsonwebtoken::{EncodingKey, Header, encode};
 
   const KEY_NAME: &str = "primary";
   const KEY_SECRET: &[u8] = b"secret";
@@ -102,19 +98,12 @@ mod tests {
     }
   }
 
-  fn encode_token(
-    claims: &TokenClaims,
-    key_name: Option<&str>,
-    key_secret: &[u8],
-  ) -> String {
+  fn encode_token(claims: &TokenClaims, key_name: Option<&str>, key_secret: &[u8]) -> String {
     let mut header = Header::new(Algorithm::HS256);
     header.kid = key_name.map(str::to_owned);
 
-    encode(
-      &header,
-      claims,
-      &EncodingKey::from_secret(key_secret),
-    ).expect("test JWT must be encoded")
+    encode(&header, claims, &EncodingKey::from_secret(key_secret))
+      .expect("test JWT must be encoded")
   }
 
   fn verify(token: &str) -> Result<VerifiedToken, TokenVerifyError> {
@@ -136,11 +125,7 @@ mod tests {
     assert_eq!(verified.issued_at, now);
     assert_eq!(verified.expires_at, now + 3600);
 
-    let operations = verified
-      .capability
-      .resources()
-      .get("private:*")
-      .unwrap();
+    let operations = verified.capability.resources().get("private:*").unwrap();
 
     assert!(operations.contains("subscribe"));
     assert!(operations.contains("publish"));
@@ -175,11 +160,7 @@ mod tests {
   #[test]
   fn rejects_token_without_key_id() {
     let now = get_current_timestamp();
-    let token = encode_token(
-      &valid_claims(now, Some("client-123")),
-      None,
-      KEY_SECRET,
-    );
+    let token = encode_token(&valid_claims(now, Some("client-123")), None, KEY_SECRET);
 
     assert!(matches!(
       verify(&token),
@@ -237,11 +218,7 @@ mod tests {
   #[test]
   fn rejects_empty_client_id() {
     let now = get_current_timestamp();
-    let token = encode_token(
-      &valid_claims(now, Some("")),
-      Some(KEY_NAME),
-      KEY_SECRET,
-    );
+    let token = encode_token(&valid_claims(now, Some("")), Some(KEY_NAME), KEY_SECRET);
 
     assert!(matches!(
       verify(&token),
@@ -253,11 +230,7 @@ mod tests {
   #[test]
   fn accepts_missing_client_id() {
     let now = get_current_timestamp();
-    let token = encode_token(
-      &valid_claims(now, None),
-      Some(KEY_NAME),
-      KEY_SECRET,
-    );
+    let token = encode_token(&valid_claims(now, None), Some(KEY_NAME), KEY_SECRET);
 
     let verified = verify(&token).expect("JWT without client_id must be accepted");
 

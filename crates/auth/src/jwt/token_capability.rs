@@ -1,6 +1,6 @@
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(transparent)]
@@ -40,10 +40,7 @@ mod tests {
       .parse::<TokenCapability>()
       .unwrap();
 
-    let operations = capability
-      .resources()
-      .get("private:*")
-      .unwrap();
+    let operations = capability.resources().get("private:*").unwrap();
 
     assert!(operations.contains("subscribe"));
     assert!(operations.contains("publish"));

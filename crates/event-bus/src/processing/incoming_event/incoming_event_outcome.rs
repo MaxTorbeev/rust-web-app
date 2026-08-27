@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IncomingEventOutcome {
   /// Handler выполнен, результат дедупликации сохранён.
   Applied,
@@ -8,7 +9,5 @@ pub enum IncomingEventOutcome {
   Duplicate,
 
   /// Событие обрабатывает другой исполнитель.
-  InProgress {
-    retry_after: Duration,
-  },
+  InProgress { retry_after: Duration },
 }

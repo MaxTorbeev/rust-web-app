@@ -1,5 +1,7 @@
+use crate::{
+  Connection, ConnectionDetails, Message, PresenceMessage, ProtocolAction, ProtocolFlag,
+};
 use serde::{Deserialize, Serialize};
-use crate::{Connection, ConnectionDetails, Message, PresenceMessage, ProtocolAction, ProtocolFlag};
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -10,34 +12,33 @@ pub struct AuthDetails {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProtocolMessage {
-
   pub action: ProtocolAction,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub channel: Option<String>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub messages: Option<Vec<Message>>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub presence: Option<Vec<PresenceMessage>>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub msg_serial: Option<u64>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub connection_id: Option<String>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub connection_details: Option<ConnectionDetails>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub auth: Option<AuthDetails>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub count: Option<u64>,
 
-  #[serde(skip_serializing_if="Option::is_none")]
+  #[serde(skip_serializing_if = "Option::is_none")]
   pub flags: Option<u64>,
 }
 

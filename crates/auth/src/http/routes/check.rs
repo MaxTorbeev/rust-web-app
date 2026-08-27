@@ -1,9 +1,9 @@
-use std::sync::Arc;
+use crate::SessionStore;
+use crate::http::responses::LoginResponse;
+use api_response::{ApiError, ApiResponse};
 use axum::extract::State;
 use axum::http::HeaderMap;
-use api_response::{ApiError, ApiResponse};
-use crate::{SessionStore};
-use crate::http::responses::LoginResponse;
+use std::sync::Arc;
 
 pub async fn check(
   headers: HeaderMap,
@@ -15,7 +15,8 @@ pub async fn check(
     .and_then(|h| h.strip_prefix("Bearer "))
     .ok_or_else(|| ApiError::unauthorized("Missing Bearer Header"))?;
 
-  let session = sessions.find(&token)
+  let session = sessions
+    .find(&token)
     .await
     .map_err(|_| ApiError::unauthorized("Invalid token"))?;
 

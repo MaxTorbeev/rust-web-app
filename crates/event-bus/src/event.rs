@@ -4,14 +4,14 @@ use serde::de::DeserializeOwned;
 /// Defines where an event must be delivered.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DeliveryClass {
-    /// Apply the event only in the publishing process.
-    LocalOnly,
+  /// Apply the event only in the publishing process.
+  LocalOnly,
 
-    /// Apply the event independently on every application node.
-    AllNodes,
+  /// Apply the event independently on every application node.
+  AllNodes,
 
-    /// Apply the event once within a shared consumer group.
-    WorkQueue,
+  /// Apply the event once within a shared consumer group.
+  WorkQueue,
 }
 
 /// A serializable domain event that can be published through [`crate::EventBus`].
@@ -58,12 +58,12 @@ pub enum DeliveryClass {
 /// # }
 /// ```
 pub trait Event: Send + Sync + Serialize + DeserializeOwned + 'static {
-    /// Stable and unique wire name. Do not rename it after events are persisted.
-    const NAME: &'static str;
+  /// Stable and unique wire name. Do not rename it after events are persisted.
+  const NAME: &'static str;
 
-    /// Payload schema version. Increase it for incompatible payload changes.
-    const VERSION: u16 = 1;
+  /// Payload schema version. Increase it for incompatible payload changes.
+  const VERSION: u16 = 1;
 
-    /// Delivery policy. Events are local unless explicitly configured otherwise.
-    const DELIVERY: DeliveryClass = DeliveryClass::LocalOnly;
+  /// Delivery policy. Events are local unless explicitly configured otherwise.
+  const DELIVERY: DeliveryClass = DeliveryClass::LocalOnly;
 }
