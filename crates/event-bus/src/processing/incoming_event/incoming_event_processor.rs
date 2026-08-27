@@ -1,9 +1,8 @@
 use std::sync::Arc;
-use std::time::Duration;
 
 use crate::{
   DedupClaim, DedupKey, DedupStore, EventDispatcher, EventMessage, IncomingEventError,
-  IncomingEventOutcome, IncomingEventProcessorConfigError,
+  IncomingEventOutcome, IncomingEventProcessorConfig,
 };
 
 /// Защищает входящие события от повторной обработки и применяет их локально.
@@ -20,70 +19,21 @@ use crate::{
 pub struct IncomingEventProcessor {
   dispatcher: Arc<EventDispatcher>,
   dedup_store: Arc<dyn DedupStore>,
-  scope: String,
-  lease_ttl: Duration,
-  /// Сколько времени после успешной обработки `event_id` считается завершённым.
-  completed_record_ttl: Duration,
+  config: IncomingEventProcessorConfig,
 }
 
 impl IncomingEventProcessor {
-  /// Создаёт processor с явно заданной областью дедупликации и сроками жизни
-  /// записей.
-  ///
-  /// Область дедупликации (`scope`) — это идентификатор независимого
-  /// получателя или группы обработчиков. Вместе с `event_id` она образует ключ
-  /// `(scope, event_id)`, по которому определяется, обрабатывалось ли событие.
-  /// Это не NATS subject и не префикс Redis-ключей.
-  ///
-  /// Выбор `scope` зависит от способа доставки:
-  ///
-  /// - для `AllNodes` каждая нода использует собственный стабильный
-  ///   идентификатор. Благодаря этому одно событие будет применено по одному
-  ///   разу на каждой ноде;
-  /// - для `WorkQueue` все consumers одной рабочей группы используют общий
-  ///   идентификатор. Благодаря этому событие применит только один участник
-  ///   группы.
-  ///
-  /// `scope` должен сохраняться после перезапуска процесса. Если генерировать
-  /// его при каждом запуске, ранее обработанные события перестанут
-  /// распознаваться как дубликаты.
-  ///
-  /// `lease_ttl` ограничивает время временного права на обработку события. Если
-  /// consumer аварийно завершится, после истечения этого срока другой consumer
-  /// сможет продолжить обработку.
-  ///
-  /// `completed_record_ttl` определяет, как долго после успешного выполнения
-  /// handler-а событие распознаётся как уже обработанное.
-  ///
-  /// Возвращает ошибку, если `scope` пустой либо один из сроков равен нулю.
-  pub fn try_new(
+  /// Создаёт processor из заранее проверенной конфигурации.
+  pub fn new(
     dispatcher: Arc<EventDispatcher>,
     dedup_store: Arc<dyn DedupStore>,
-    scope: impl Into<String>,
-    lease_ttl: Duration,
-    completed_record_ttl: Duration,
-  ) -> Result<Self, IncomingEventProcessorConfigError> {
-    let scope = scope.into();
-
-    if scope.is_empty() {
-      return Err(IncomingEventProcessorConfigError::EmptyScope);
-    }
-
-    if lease_ttl.is_zero() {
-      return Err(IncomingEventProcessorConfigError::ZeroLeaseTtl);
-    }
-
-    if completed_record_ttl.is_zero() {
-      return Err(IncomingEventProcessorConfigError::ZeroCompletedRecordTtl);
-    }
-
-    Ok(Self {
+    config: IncomingEventProcessorConfig,
+  ) -> Self {
+    Self {
       dispatcher,
       dedup_store,
-      scope,
-      lease_ttl,
-      completed_record_ttl,
-    })
+      config,
+    }
   }
 
   /// Проверяет состояние дедупликации и при необходимости запускает handler.
@@ -106,15 +56,28 @@ impl IncomingEventProcessor {
   /// Если handler завершается с ошибкой, processor пытается освободить
   /// временное право на обработку. Решение о повторной доставке принимает
   /// вызывающий transport consumer на основании [`IncomingEventError`].
+  ///
+  /// Выполнение handler-а ограничено `processing_timeout`. При превышении
+  /// лимита его future удаляется, lease освобождается, а вызывающая сторона
+  /// получает retryable-ошибку. Ограничение кооперативное: handler должен
+  /// регулярно возвращать управление executor-у и не выполнять блокирующую
+  /// работу в async-контексте. Побочные эффекты, которые handler уже успел
+  /// выполнить, не откатываются, поэтому обработчики всё равно должны быть
+  /// идемпотентными.
+  ///
+  /// # Panics
+  ///
+  /// После получения lease метод паникует, если future выполняется вне Tokio
+  /// runtime с включённым time driver.
   pub async fn process(
     &self,
     message: &EventMessage,
   ) -> Result<IncomingEventOutcome, IncomingEventError> {
-    let key = DedupKey::new(self.scope.clone(), message.event_id());
+    let key = DedupKey::new(self.config.scope(), message.event_id());
 
     let claim = self
       .dedup_store
-      .claim(&key, self.lease_ttl)
+      .claim(&key, self.config.lease_ttl())
       .await
       .map_err(|source| IncomingEventError::Claim { source })?;
 
@@ -126,18 +89,35 @@ impl IncomingEventProcessor {
       }
 
       DedupClaim::Acquired(lease) => {
-        if let Err(source) = self.dispatcher.dispatch(message).await {
-          let release_error = self.dedup_store.release(&lease).await.err();
+        let dispatch_result = tokio::time::timeout(
+          self.config.processing_timeout(),
+          self.dispatcher.dispatch(message),
+        )
+        .await;
 
-          return Err(IncomingEventError::Dispatch {
-            source,
-            release_error,
-          });
+        match dispatch_result {
+          Ok(Ok(())) => {}
+          Ok(Err(source)) => {
+            let release_error = self.dedup_store.release(&lease).await.err();
+
+            return Err(IncomingEventError::Dispatch {
+              source,
+              release_error,
+            });
+          }
+          Err(_) => {
+            let release_error = self.dedup_store.release(&lease).await.err();
+
+            return Err(IncomingEventError::ProcessingTimeout {
+              timeout: self.config.processing_timeout(),
+              release_error,
+            });
+          }
         }
 
         self
           .dedup_store
-          .complete(&lease, self.completed_record_ttl)
+          .complete(&lease, self.config.completed_record_ttl())
           .await
           .map_err(|source| IncomingEventError::Complete { source })?;
 
