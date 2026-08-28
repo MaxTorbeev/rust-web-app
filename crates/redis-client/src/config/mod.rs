@@ -1,4 +1,6 @@
+use std::env::VarError;
 use std::time::Duration;
+use support::app::{ReadEnvError, read_env, read_env_or};
 
 pub struct RedisConfig {
   pub host: String,
@@ -17,22 +19,34 @@ impl Default for RedisConfig {
     Self {
       connection_timeout: Duration::from_secs(5),
       response_timeout: Duration::from_secs(3),
-      username: std::env::var("REDIS_USERNAME").ok(),
-      password: std::env::var("REDIS_PASSWORD").ok(),
-      host: std::env::var("REDIS_HOST")
-        .unwrap_or_else(|error| {
-          tracing::error!(%error, "redis url env var is missing or invalid");
-
-          "127.0.0.1".to_string()
-        })
-        .to_string(),
-      port: std::env::var("REDIS_PORT").unwrap_or_default().to_string(),
-      db: 0.to_string(),
+      username: None,
+      password: None,
+      host: "127.0.0.1".to_owned(),
+      port: "6379".to_owned(),
+      db: "0".to_owned(),
     }
   }
 }
 
 impl RedisConfig {
+  /// Builds a Redis configuration from environment variables.
+  ///
+  /// `REDIS_HOST` and `REDIS_PORT` retain their local defaults when absent.
+  /// `REDIS_USERNAME` and `REDIS_PASSWORD` are optional. An environment value
+  /// that is present but is not valid Unicode is returned as an error for every
+  /// field.
+  pub fn from_env() -> Result<Self, ReadEnvError> {
+    let defaults = Self::default();
+
+    Ok(Self {
+      host: read_env_or("REDIS_HOST", defaults.host)?,
+      port: read_env_or("REDIS_PORT", defaults.port)?,
+      username: read_optional_env("REDIS_USERNAME")?,
+      password: read_optional_env("REDIS_PASSWORD")?,
+      ..defaults
+    })
+  }
+
   pub fn to_url(&self) -> String {
     let auth = match (self.username.as_ref(), self.password.as_ref()) {
       (Some(username), Some(password)) => format!("{username}:{password}"),
@@ -43,3 +57,14 @@ impl RedisConfig {
     format!("redis://{}@{}:{}/{}", auth, self.host, self.port, self.db)
   }
 }
+
+fn read_optional_env(variable: &'static str) -> Result<Option<String>, ReadEnvError> {
+  match read_env(variable) {
+    Ok(value) => Ok(Some(value)),
+    Err(error) if matches!(error.var_error(), VarError::NotPresent) => Ok(None),
+    Err(error) => Err(error),
+  }
+}
+
+#[cfg(test)]
+mod tests;

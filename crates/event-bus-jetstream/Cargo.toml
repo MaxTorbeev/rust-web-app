@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 event-bus = { path = "../event-bus" }
 nats-client = { path = "../nats-client" }
+support = { path = "../support" }
 bytes = "1"
 thiserror = "2"
 tracing = "0.1"

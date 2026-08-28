@@ -1,4 +1,5 @@
 use crate::{ApplicationId, ApplicationKeyName, ConfigError};
+use support::app::read_env;
 
 pub struct RealtimeConfig {
   pub application_id: ApplicationId,
@@ -8,7 +9,7 @@ pub struct RealtimeConfig {
 
 impl RealtimeConfig {
   pub fn from_env() -> Result<Self, ConfigError> {
-    let credentials = std::env::var("APP_REALTIME_API_KEY").map_err(ConfigError::Environment)?;
+    let credentials = read_env("APP_REALTIME_API_KEY").map_err(ConfigError::Environment)?;
 
     Self::parse(&credentials)
   }

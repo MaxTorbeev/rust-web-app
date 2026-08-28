@@ -12,7 +12,8 @@ mod listeners;
 mod state;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
-  let redis = Arc::new(RedisClient::connect(&RedisConfig::default()).await?);
+  let redis_config = RedisConfig::from_env()?;
+  let redis = Arc::new(RedisClient::connect(&redis_config).await?);
 
   let auth = Arc::new(AuthConfig::from_env()?);
 

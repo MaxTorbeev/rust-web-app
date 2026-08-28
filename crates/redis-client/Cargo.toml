@@ -5,7 +5,5 @@ edition = "2024"
 
 [dependencies]
 redis = { version = "0.32", features = ["tokio-comp", "sentinel", "connection-manager", "script"] }
-dotenvy = "0.15"
+support = { path = "../support" }
 thiserror = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }

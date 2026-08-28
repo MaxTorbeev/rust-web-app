@@ -527,12 +527,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "event-bus-dedup-redis"
+version = "0.1.0"
+dependencies = [
+ "event-bus",
+ "redis-client",
+ "support",
+]
+
+[[package]]
 name = "event-bus-jetstream"
 version = "0.1.0"
 dependencies = [
  "bytes",
  "event-bus",
  "nats-client",
+ "support",
  "thiserror",
  "tokio",
  "tracing",
@@ -1029,6 +1039,7 @@ dependencies = [
  "nats-client",
  "realtime",
  "redis-client",
+ "support",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1470,11 +1481,9 @@ dependencies = [
 name = "redis-client"
 version = "0.1.0"
 dependencies = [
- "dotenvy",
  "redis",
+ "support",
  "thiserror",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1894,6 +1903,7 @@ name = "support"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "thiserror",
 ]
 
 [[package]]

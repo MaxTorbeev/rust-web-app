@@ -1,6 +1,8 @@
+use support::app::ReadEnvError;
+
 #[derive(Debug)]
 pub enum ConfigError {
-  Environment(std::env::VarError),
+  Environment(ReadEnvError),
   InvalidApiKeyFormat,
 }
 
@@ -17,4 +19,11 @@ impl std::fmt::Display for ConfigError {
   }
 }
 
-impl std::error::Error for ConfigError {}
+impl std::error::Error for ConfigError {
+  fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+    match self {
+      Self::Environment(error) => Some(error),
+      Self::InvalidApiKeyFormat => None,
+    }
+  }
+}

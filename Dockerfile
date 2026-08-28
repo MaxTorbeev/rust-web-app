@@ -30,7 +30,6 @@ COPY --from=builder \
     /usr/local/bin/mxt-realtime
 
 ENV APP_URL=0.0.0.0:4008
-ENV APP_TLS_ENABLED=false
 ENV RUST_LOG=info
 
 USER 10001:10001

@@ -1,4 +1,5 @@
 use event_bus::DeliveryClass;
+use support::app::APP_NAMESPACE_SEPARATOR;
 
 use crate::error::EventSubjectError;
 
@@ -21,7 +22,9 @@ pub(crate) fn event_subject(
     }
   };
 
-  Ok(format!("{prefix}.{delivery}.{event_name}"))
+  Ok(format!(
+    "{prefix}{APP_NAMESPACE_SEPARATOR}{delivery}{APP_NAMESPACE_SEPARATOR}{event_name}"
+  ))
 }
 
 pub(crate) fn is_valid_subject_token(value: &str) -> bool {

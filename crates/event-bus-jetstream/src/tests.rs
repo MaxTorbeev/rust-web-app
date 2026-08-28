@@ -1,7 +1,10 @@
-use event_bus::{DeliveryClass, EventBusError, EventMessage};
+use event_bus::{
+  DeliveryClass, EVENT_BUS_NAMESPACE_VERSION, EVENT_BUS_SUBSYSTEM, EventBusError, EventMessage,
+};
+use support::app::AppNamespace;
 
 use crate::config::JetStreamPublisherConfig;
-use crate::error::{EventSubjectError, JetStreamPublisherConfigError};
+use crate::error::EventSubjectError;
 use crate::publisher::prepare_message;
 use crate::subject::event_subject;
 
@@ -19,47 +22,28 @@ fn event_message() -> EventMessage {
   EventMessage::from_bytes(EVENT_BYTES).expect("test event envelope must be valid")
 }
 
-#[test]
-fn builds_subject_prefix_from_explicit_namespace() {
-  let config = JetStreamPublisherConfig::try_new("mxt_realtime", "production")
-    .expect("publisher config must be valid");
-
-  assert_eq!(config.subject_prefix(), "mxt_realtime.production.events");
+fn app_namespace() -> AppNamespace {
+  AppNamespace::try_new(
+    "mxt_realtime",
+    "production",
+    EVENT_BUS_SUBSYSTEM,
+    EVENT_BUS_NAMESPACE_VERSION,
+  )
+  .expect("application namespace must be valid")
 }
 
 #[test]
-fn rejects_invalid_namespace_components() {
-  for app_name in ["", "mxt realtime", "mxt.realtime", "mxt*", "mxt>", "мхт"] {
-    let error = JetStreamPublisherConfig::try_new(app_name, "production")
-      .expect_err("invalid APP value must be rejected");
+fn builds_subject_prefix_from_app_namespace() {
+  let namespace = app_namespace();
+  let config = JetStreamPublisherConfig::new(&namespace);
 
-    assert!(matches!(
-      error,
-      JetStreamPublisherConfigError::InvalidNamespaceComponent {
-        component: "APP",
-        ..
-      }
-    ));
-  }
-
-  for app_environment in ["", "production eu", "production.eu", "prod*", "prod>"] {
-    let error = JetStreamPublisherConfig::try_new("mxt_realtime", app_environment)
-      .expect_err("invalid APP_ENV value must be rejected");
-
-    assert!(matches!(
-      error,
-      JetStreamPublisherConfigError::InvalidNamespaceComponent {
-        component: "APP_ENV",
-        ..
-      }
-    ));
-  }
+  assert_eq!(config.subject_prefix(), namespace.as_str());
 }
 
 #[test]
 fn maps_all_nodes_events_to_fanout_subjects() {
   let subject = event_subject(
-    "mxt_realtime.production.events",
+    "mxt_realtime.production.event-bus.v1",
     "realtime.channel_message_submitted",
     DeliveryClass::AllNodes,
   )
@@ -67,14 +51,14 @@ fn maps_all_nodes_events_to_fanout_subjects() {
 
   assert_eq!(
     subject,
-    "mxt_realtime.production.events.all.realtime.channel_message_submitted"
+    "mxt_realtime.production.event-bus.v1.all.realtime.channel_message_submitted"
   );
 }
 
 #[test]
 fn maps_work_queue_events_to_work_subjects() {
   let subject = event_subject(
-    "mxt_realtime.production.events",
+    "mxt_realtime.production.event-bus.v1",
     "jobs.audit_requested",
     DeliveryClass::WorkQueue,
   )
@@ -82,14 +66,14 @@ fn maps_work_queue_events_to_work_subjects() {
 
   assert_eq!(
     subject,
-    "mxt_realtime.production.events.work.jobs.audit_requested"
+    "mxt_realtime.production.event-bus.v1.work.jobs.audit_requested"
   );
 }
 
 #[test]
 fn rejects_local_only_delivery_for_jetstream() {
   let error = event_subject(
-    "mxt_realtime.production.events",
+    "mxt_realtime.production.event-bus.v1",
     "realtime.websocket_connected",
     DeliveryClass::LocalOnly,
   )
@@ -110,7 +94,7 @@ fn rejects_invalid_event_names() {
     "realtime.>",
   ] {
     let error = event_subject(
-      "mxt_realtime.production.events",
+      "mxt_realtime.production.event-bus.v1",
       event_name,
       DeliveryClass::AllNodes,
     )
@@ -122,8 +106,7 @@ fn rejects_invalid_event_names() {
 
 #[test]
 fn prepares_subject_and_preserves_event_envelope() {
-  let config = JetStreamPublisherConfig::try_new("mxt_realtime", "production")
-    .expect("publisher config must be valid");
+  let config = JetStreamPublisherConfig::new(&app_namespace());
   let event = event_message();
 
   let outgoing = prepare_message(&config, &event, DeliveryClass::AllNodes)
@@ -131,7 +114,7 @@ fn prepares_subject_and_preserves_event_envelope() {
 
   assert_eq!(
     outgoing.subject(),
-    "mxt_realtime.production.events.all.realtime.channel_message_submitted"
+    "mxt_realtime.production.event-bus.v1.all.realtime.channel_message_submitted"
   );
 
   let decoded = EventMessage::from_bytes(outgoing.payload())
@@ -142,8 +125,7 @@ fn prepares_subject_and_preserves_event_envelope() {
 
 #[test]
 fn reports_local_only_preparation_as_publisher_error() {
-  let config = JetStreamPublisherConfig::try_new("mxt_realtime", "production")
-    .expect("publisher config must be valid");
+  let config = JetStreamPublisherConfig::new(&app_namespace());
   let event = event_message();
 
   let error = prepare_message(&config, &event, DeliveryClass::LocalOnly)

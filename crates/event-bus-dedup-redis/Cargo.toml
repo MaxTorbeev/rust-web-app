@@ -1,0 +1,9 @@
+[package]
+name = "event-bus-dedup-redis"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+redis-client = { path = "../redis-client" }
+event-bus = { path = "../event-bus" }
+support = { path = "../support" }

@@ -1,3 +1,4 @@
+pub mod app;
 mod coders;
 mod date;
 

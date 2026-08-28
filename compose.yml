@@ -36,7 +36,6 @@ services:
 
     environment:
       APP_URL: 0.0.0.0:4008
-      APP_TLS_ENABLED: "false"
 
       REDIS_HOST: redis
       REDIS_PORT: "6379"

@@ -10,7 +10,6 @@ mod publisher;
 mod subject;
 
 pub use config::JetStreamPublisherConfig;
-pub use error::JetStreamPublisherConfigError;
 pub use publisher::JetStreamEventPublisher;
 
 #[cfg(test)]

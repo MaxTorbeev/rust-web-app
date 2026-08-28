@@ -25,3 +25,9 @@ pub use processing::*;
 pub use processing_error_class::ProcessingErrorClass;
 pub use publish_receipt::PublishReceipt;
 pub use publishers::{EventPublishFuture, EventPublisher, LocalEventPublisher};
+
+/// Stable subsystem segment used by event-bus infrastructure adapters.
+pub const EVENT_BUS_SUBSYSTEM: &str = "event-bus";
+
+/// Version of the shared event-bus infrastructure namespace.
+pub const EVENT_BUS_NAMESPACE_VERSION: u64 = 1;
