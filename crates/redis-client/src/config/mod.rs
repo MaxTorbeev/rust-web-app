@@ -1,14 +1,22 @@
+use std::time::Duration;
+
 pub struct RedisConfig {
   pub host: String,
   pub port: String,
   pub username: Option<String>,
   pub password: Option<String>,
   pub db: String,
+  /// Сколько ждём установления TCP-соединения;
+  pub connection_timeout: Duration,
+  /// Сколько ждём ответа на Redis-команду.
+  pub response_timeout: Duration,
 }
 
 impl Default for RedisConfig {
   fn default() -> Self {
     Self {
+      connection_timeout: Duration::from_secs(5),
+      response_timeout: Duration::from_secs(3),
       username: std::env::var("REDIS_USERNAME").ok(),
       password: std::env::var("REDIS_PASSWORD").ok(),
       host: std::env::var("REDIS_HOST")

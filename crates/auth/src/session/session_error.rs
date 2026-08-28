@@ -1,7 +1,7 @@
 #[derive(Debug)]
 pub enum SessionError {
   TokenGeneration(getrandom::Error),
-  Redis(redis_client::RedisError),
+  Redis(redis_client::RedisClientError),
   Serialization(serde_json::Error),
 }
 
@@ -11,8 +11,8 @@ impl From<getrandom::Error> for SessionError {
   }
 }
 
-impl From<redis_client::RedisError> for SessionError {
-  fn from(err: redis_client::RedisError) -> SessionError {
+impl From<redis_client::RedisClientError> for SessionError {
+  fn from(err: redis_client::RedisClientError) -> SessionError {
     SessionError::Redis(err)
   }
 }
