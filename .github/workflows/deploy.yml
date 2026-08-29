@@ -192,7 +192,7 @@ jobs:
           printf 'APP_ENV=%s\n' "$APP_ENV" \
             >> "$environment_file"          
           
-          printf 'APP_ENV=%s\n' "$EVENT_BUS_DRIVER" \
+          printf 'EVENT_BUS_DRIVER=%s\n' "$EVENT_BUS_DRIVER" \
             >> "$environment_file"
           
           printf 'RUST_LOG=%s\n' "${RUST_LOG:-info}" \
