@@ -2,8 +2,7 @@ use std::sync::Arc;
 
 use crate::app::config::HttpConfig;
 use auth::AuthConfig;
-use event_bus::{EventBus, EventDispatcher, HandlerRegistrationError};
-use realtime::{Realtime, RealtimeConfig, register_event_handlers};
+use realtime::{Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
 use crate::app::providers::EventBusProvider;
 
@@ -21,7 +20,12 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let realtime = Arc::new(Realtime::from_config(RealtimeConfig::from_env()?));
 
-  let event_bus = build_event_bus(Arc::clone(&realtime))?;
+  let event_bus_runtime = EventBusProvider::build(
+    Arc::clone(&redis),
+    Arc::clone(&realtime),
+  ).await?;
+
+  let event_bus = event_bus_runtime.event_bus();
 
   let app_state = state::AppState::new(redis, auth, event_bus, realtime);
 
@@ -30,16 +34,19 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   // run our app with hyper, listening globally on port 3000
   let listener = tokio::net::TcpListener::bind(HttpConfig::from_env()?.url).await?;
 
-  axum::serve(listener, routes).await?;
+  let http_server = async move {
+    axum::serve(listener, routes).await
+  };
+
+  tokio::select! {
+    result = http_server => {
+      result?;
+    }
+
+    result = event_bus_runtime.run() => {
+      result?;
+    }
+  }
 
   Ok(())
-}
-
-fn build_event_bus(realtime: Arc<Realtime>) -> Result<Arc<EventBus>, HandlerRegistrationError> {
-  let mut dispatcher = EventDispatcher::new();
-
-  listeners::register(&mut dispatcher)?;
-  register_event_handlers(&mut dispatcher, realtime)?;
-
-  Ok(Arc::new(EventBus::local(Arc::new(dispatcher))))
 }
