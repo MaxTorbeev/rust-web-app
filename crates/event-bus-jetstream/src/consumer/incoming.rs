@@ -7,19 +7,25 @@ use super::settlement::SettlementAction;
 
 pub struct JetStreamIncomingConsumer {
   processor: Arc<IncomingEventProcessor>,
+  subscription: NatsSubscription,
   config: JetStreamIncomingConsumerConfig,
 }
 
 impl JetStreamIncomingConsumer {
-  pub fn new(processor: Arc<IncomingEventProcessor>, config: JetStreamIncomingConsumerConfig) -> Self {
+  pub fn new(
+    processor: Arc<IncomingEventProcessor>,
+    subscription: NatsSubscription,
+    config: JetStreamIncomingConsumerConfig
+  ) -> Self {
     Self {
       processor,
+      subscription,
       config,
     }
   }
 
-  pub async fn run(&self, mut subscription: NatsSubscription) -> Result<(), JetStreamConsumerError> {
-    while let Some(delivery) = subscription.next().await {
+  pub async fn run(mut self) -> Result<(), JetStreamConsumerError> {
+    while let Some(delivery) = self.subscription.next().await {
       let delivery = delivery.map_err(JetStreamConsumerError::Receive)?;
 
       self.handle(delivery).await?;

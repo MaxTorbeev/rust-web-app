@@ -6,6 +6,7 @@ use crate::{NatsMessage, ReceiveError};
 /// Pull-consumer delivery stream.
 ///
 /// Поток входящих доставок durable pull consumer-а JetStream.
+#[derive(Clone)]
 pub struct NatsSubscription {
   messages: DriverMessageStream,
 }

@@ -5,11 +5,13 @@ use auth::AuthConfig;
 use event_bus::{EventBus, EventDispatcher, HandlerRegistrationError};
 use realtime::{Realtime, RealtimeConfig, register_event_handlers};
 use redis_client::{RedisClient, RedisConfig};
+use crate::app::providers::EventBusProvider;
 
 mod config;
 mod http;
 mod listeners;
 mod state;
+mod providers;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   let redis_config = RedisConfig::from_env()?;

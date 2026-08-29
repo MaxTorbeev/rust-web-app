@@ -16,6 +16,7 @@ auth = { path = "crates/auth" }
 event-bus = { path = "crates/event-bus" }
 event-bus-jetstream = {path = "crates/event-bus-jetstream"}
 support = { path = "crates/support" }
+thiserror = "2.0.18"
 
 [workspace]
 members = [".", "crates/*"]

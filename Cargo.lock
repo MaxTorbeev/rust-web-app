@@ -1043,6 +1043,7 @@ dependencies = [
  "realtime",
  "redis-client",
  "support",
+ "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
