@@ -4,7 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tracing = "0.1"
 async-nats = { version = "0.50", default-features = false, features = ["ring", "jetstream"] }
 bytes = "1"
 thiserror = "2"
 futures-util = "0.3"
+event-bus = { path = "../event-bus" }

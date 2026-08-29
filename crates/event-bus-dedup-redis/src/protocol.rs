@@ -39,21 +39,25 @@ pub(crate) fn redis_ttl_milliseconds(ttl: Duration) -> Result<i64, RedisDedupSto
 pub(crate) fn decode_claim_value(
   value: ScriptValue,
 ) -> Result<ClaimScriptOutcome, RedisDedupStoreError> {
-  let outcome = match &value {
-    ScriptValue::Array(values) => match values.as_slice() {
-      [ScriptValue::Integer(1)] => Some(ClaimScriptOutcome::Acquired),
-      [ScriptValue::Integer(2)] => Some(ClaimScriptOutcome::Completed),
-      [ScriptValue::Integer(3), ScriptValue::Integer(milliseconds)] => u64::try_from(*milliseconds)
-        .ok()
-        .map(|milliseconds| ClaimScriptOutcome::InProgress {
-          retry_after: Duration::from_millis(milliseconds),
-        }),
-      _ => None,
-    },
-    _ => None,
+  let ScriptValue::Array(values) = &value else {
+    return Err(RedisDedupStoreError::UnexpectedClaimValue { value })
   };
 
-  outcome.ok_or(RedisDedupStoreError::UnexpectedClaimValue { value })
+  match values.as_slice() {
+    [ScriptValue::Integer(1)] => Ok(ClaimScriptOutcome::Acquired),
+
+    [ScriptValue::Integer(2)] => Ok(ClaimScriptOutcome::Completed),
+
+    [ScriptValue::Integer(3), ScriptValue::Integer(milliseconds)] => {
+      let milliseconds = u64::try_from(*milliseconds)
+        .map_err(|_| RedisDedupStoreError::UnexpectedClaimValue { value })?;
+
+      Ok(ClaimScriptOutcome::InProgress {
+        retry_after: Duration::from_millis(milliseconds)
+      })
+    },
+    _ => Err(RedisDedupStoreError::UnexpectedClaimValue { value })
+  }
 }
 
 pub(crate) fn decode_transition_value(
