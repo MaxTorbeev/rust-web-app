@@ -533,6 +533,9 @@ dependencies = [
  "event-bus",
  "redis-client",
  "support",
+ "thiserror",
+ "tokio",
+ "uuid",
 ]
 
 [[package]]

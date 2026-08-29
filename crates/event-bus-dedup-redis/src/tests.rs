@@ -20,3 +20,5 @@ fn builds_key_prefix_from_shared_namespace() {
     "mxt_realtime.production.event-bus.v1.dedup"
   );
 }
+
+mod live_redis;
