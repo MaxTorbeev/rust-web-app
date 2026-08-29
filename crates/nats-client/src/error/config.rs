@@ -34,9 +34,6 @@ pub enum ConsumerConfigError {
 
   #[error("JetStream consumer max_deliver must be greater than zero, got {max_deliver}")]
   InvalidMaxDeliver { max_deliver: i64 },
-
-  #[error("JetStream consumer max_ack_pending must be greater than zero, got {max_ack_pending}")]
-  InvalidMaxAckPending { max_ack_pending: i64 },
 }
 
 /// Validation error for [`crate::StreamLimits`].

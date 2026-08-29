@@ -15,6 +15,7 @@ realtime = { path = "crates/realtime" }
 auth = { path = "crates/auth" }
 event-bus = { path = "crates/event-bus" }
 event-bus-jetstream = {path = "crates/event-bus-jetstream"}
+event-bus-dedup-redis= {path = "crates/event-bus-dedup-redis"}
 support = { path = "crates/support" }
 thiserror = "2.0.18"
 confique = { version = "0.4.0", features = ["toml"] }

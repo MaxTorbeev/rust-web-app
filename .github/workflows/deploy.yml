@@ -132,6 +132,8 @@ jobs:
       DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
 
+      EVENT_BUS_DRIVER: ${{ vars.EVENT_BUS_DRIVER }}
+
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
@@ -188,6 +190,9 @@ jobs:
             >> "$environment_file"
           
           printf 'APP_ENV=%s\n' "$APP_ENV" \
+            >> "$environment_file"          
+          
+          printf 'APP_ENV=%s\n' "$EVENT_BUS_DRIVER" \
             >> "$environment_file"
           
           printf 'RUST_LOG=%s\n' "${RUST_LOG:-info}" \

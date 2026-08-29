@@ -3,10 +3,10 @@ use event_bus::{
 };
 use support::app::AppNamespace;
 
-use crate::config::JetStreamPublisherConfig;
 use crate::error::EventSubjectError;
 use crate::publisher::prepare_message;
 use crate::subject::event_subject;
+use crate::subject_config::JetStreamSubjectConfig;
 
 const EVENT_BYTES: &[u8] = br#"{
     "eventId": "550e8400-e29b-41d4-a716-446655440000",
@@ -35,9 +35,13 @@ fn app_namespace() -> AppNamespace {
 #[test]
 fn builds_subject_prefix_from_app_namespace() {
   let namespace = app_namespace();
-  let config = JetStreamPublisherConfig::new(&namespace);
+  let subjects = JetStreamSubjectConfig::new(&namespace);
 
-  assert_eq!(config.subject_prefix(), namespace.as_str());
+  assert_eq!(subjects.prefix(), namespace.as_str());
+  assert_eq!(
+    subjects.all_nodes_subject_filter(),
+    "mxt_realtime.production.event-bus.v1.all.>"
+  );
 }
 
 #[test]
@@ -106,10 +110,10 @@ fn rejects_invalid_event_names() {
 
 #[test]
 fn prepares_subject_and_preserves_event_envelope() {
-  let config = JetStreamPublisherConfig::new(&app_namespace());
+  let subjects = JetStreamSubjectConfig::new(&app_namespace());
   let event = event_message();
 
-  let outgoing = prepare_message(&config, &event, DeliveryClass::AllNodes)
+  let outgoing = prepare_message(&subjects, &event, DeliveryClass::AllNodes)
     .expect("event publication must be prepared");
 
   assert_eq!(
@@ -125,10 +129,10 @@ fn prepares_subject_and_preserves_event_envelope() {
 
 #[test]
 fn reports_local_only_preparation_as_publisher_error() {
-  let config = JetStreamPublisherConfig::new(&app_namespace());
+  let subjects = JetStreamSubjectConfig::new(&app_namespace());
   let event = event_message();
 
-  let error = prepare_message(&config, &event, DeliveryClass::LocalOnly)
+  let error = prepare_message(&subjects, &event, DeliveryClass::LocalOnly)
     .expect_err("LocalOnly event must not be prepared for JetStream");
 
   assert!(matches!(error, EventBusError::Publisher(_)));

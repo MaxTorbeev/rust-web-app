@@ -4,8 +4,8 @@ use bytes::Bytes;
 use event_bus::{DeliveryClass, EventBusError, EventMessage, EventPublishFuture, EventPublisher};
 use nats_client::{NatsClient, PublishMessage};
 
-use crate::config::JetStreamPublisherConfig;
 use crate::subject::event_subject;
+use crate::subject_config::JetStreamSubjectConfig;
 
 /// Publishes distributed event envelopes to NATS JetStream.
 ///
@@ -13,13 +13,13 @@ use crate::subject::event_subject;
 /// matching stream. It does not mean that a consumer processed the event.
 pub struct JetStreamEventPublisher {
   client: Arc<NatsClient>,
-  config: JetStreamPublisherConfig,
+  subjects: JetStreamSubjectConfig,
 }
 
 impl JetStreamEventPublisher {
-  /// Creates a publisher from an already connected client and validated config.
-  pub fn new(client: Arc<NatsClient>, config: JetStreamPublisherConfig) -> Self {
-    Self { client, config }
+  /// Creates a publisher from an already connected client and subject topology.
+  pub fn new(client: Arc<NatsClient>, subjects: JetStreamSubjectConfig) -> Self {
+    Self { client, subjects }
   }
 }
 
@@ -30,7 +30,7 @@ impl EventPublisher for JetStreamEventPublisher {
     delivery: DeliveryClass,
   ) -> EventPublishFuture<'a> {
     Box::pin(async move {
-      let outgoing = prepare_message(&self.config, message, delivery)?;
+      let outgoing = prepare_message(&self.subjects, message, delivery)?;
       let ack = self
         .client
         .publish(outgoing)
@@ -53,11 +53,11 @@ impl EventPublisher for JetStreamEventPublisher {
 }
 
 pub(crate) fn prepare_message(
-  config: &JetStreamPublisherConfig,
+  subjects: &JetStreamSubjectConfig,
   message: &EventMessage,
   delivery: DeliveryClass,
 ) -> Result<PublishMessage, EventBusError> {
-  let subject = event_subject(config.subject_prefix(), message.event_name(), delivery)
+  let subject = event_subject(subjects.prefix(), message.event_name(), delivery)
     .map_err(EventBusError::publisher)?;
 
   let payload = Bytes::from(message.to_bytes()?);

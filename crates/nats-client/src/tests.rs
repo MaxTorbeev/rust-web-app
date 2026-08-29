@@ -47,7 +47,6 @@ fn converts_valid_consumer_config_to_explicit_pull_policy() {
     "mxt.production.events.all.>",
     Duration::from_secs(30),
     5,
-    512,
   )
   .expect("consumer config must be valid");
 
@@ -58,7 +57,7 @@ fn converts_valid_consumer_config_to_explicit_pull_policy() {
   assert_eq!(driver.ack_policy, AckPolicy::Explicit);
   assert_eq!(driver.ack_wait, Duration::from_secs(30));
   assert_eq!(driver.max_deliver, 5);
-  assert_eq!(driver.max_ack_pending, 512);
+  assert_eq!(driver.max_ack_pending, 1);
   assert_eq!(driver.filter_subject, "mxt.production.events.all.>");
 }
 
@@ -71,7 +70,6 @@ fn rejects_invalid_consumer_config() {
       "mxt.production.events.all.>",
       Duration::from_secs(30),
       5,
-      512,
     )
   };
 
@@ -83,7 +81,6 @@ fn rejects_invalid_consumer_config() {
       "events.>",
       Duration::from_secs(30),
       5,
-      512,
     )
     .unwrap_err(),
     ConsumerConfigError::InvalidStreamName { .. }
@@ -95,7 +92,6 @@ fn rejects_invalid_consumer_config() {
       "events.>",
       Duration::from_secs(30),
       5,
-      512,
     )
     .unwrap_err(),
     ConsumerConfigError::InvalidDurableName { .. }
@@ -107,21 +103,13 @@ fn rejects_invalid_consumer_config() {
       "events.>.invalid",
       Duration::from_secs(30),
       5,
-      512,
     )
     .unwrap_err(),
     ConsumerConfigError::InvalidFilterSubject { .. }
   ));
   assert_eq!(
-    ConsumerConfig::try_new(
-      "EVENTS",
-      "realtime-node-1",
-      "events.>",
-      Duration::ZERO,
-      5,
-      512,
-    )
-    .unwrap_err(),
+    ConsumerConfig::try_new("EVENTS", "realtime-node-1", "events.>", Duration::ZERO, 5,)
+      .unwrap_err(),
     ConsumerConfigError::ZeroAckWait
   );
 }
@@ -134,7 +122,6 @@ fn detects_incompatible_consumer_configuration() {
     "events.all.>",
     Duration::from_secs(30),
     5,
-    512,
   )
   .expect("consumer config must be valid");
   let mut driver = config.to_driver_config();

@@ -5,15 +5,18 @@
 //! Application composition and consumer task supervision remain outside the
 //! adapter.
 
-mod config;
 mod consumer;
 mod error;
 mod publisher;
 mod subject;
+mod subject_config;
 
-pub use config::JetStreamPublisherConfig;
-pub use consumer::{JetStreamConsumerError, JetStreamIncomingConsumer};
+pub use consumer::{
+  JetStreamConsumerError, JetStreamIncomingConsumer, JetStreamIncomingConsumerConfig,
+  JetStreamIncomingConsumerConfigError,
+};
 pub use publisher::JetStreamEventPublisher;
+pub use subject_config::JetStreamSubjectConfig;
 
 #[cfg(test)]
 mod tests;

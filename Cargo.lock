@@ -1090,6 +1090,7 @@ dependencies = [
  "confique",
  "dotenvy",
  "event-bus",
+ "event-bus-dedup-redis",
  "event-bus-jetstream",
  "nats-client",
  "realtime",

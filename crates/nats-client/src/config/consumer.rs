@@ -34,7 +34,6 @@ impl ConsumerConfig {
     filter_subject: impl Into<String>,
     ack_wait: Duration,
     max_deliver: i64,
-    max_ack_pending: i64,
   ) -> Result<Self, ConsumerConfigError> {
     let stream_name = stream_name.into();
     let durable_name = durable_name.into();
@@ -64,9 +63,10 @@ impl ConsumerConfig {
       return Err(ConsumerConfigError::InvalidMaxDeliver { max_deliver });
     }
 
-    if max_ack_pending <= 0 {
-      return Err(ConsumerConfigError::InvalidMaxAckPending { max_ack_pending });
-    }
+    // Входящий consumer пока обрабатывает сообщения последовательно. Разрешаем
+    // серверу выдать только одно неподтверждённое сообщение, чтобы `ack_wait`
+    // следующих сообщений не истекал, пока они ожидают своей очереди.
+    let max_ack_pending = 1;
 
     Ok(Self {
       stream_name,
