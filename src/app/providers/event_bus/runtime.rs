@@ -28,7 +28,7 @@ impl EventBusRuntime {
   }
 
   pub async fn run(mut self) -> Result<(), EventBusRuntimeError> {
-    let Some(worker) = &mut self.worker else {
+    let Some(worker) = self.worker else {
       // У локального Event Bus нет фонового worker-а. Оставляем runtime в ожидании,
       // чтобы supervisor не воспринял отсутствие worker-а как завершение подсистемы
       // и не остановил приложение.

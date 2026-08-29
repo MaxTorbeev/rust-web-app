@@ -17,6 +17,8 @@ event-bus = { path = "crates/event-bus" }
 event-bus-jetstream = {path = "crates/event-bus-jetstream"}
 support = { path = "crates/support" }
 thiserror = "2.0.18"
+confique = { version = "0.4.0", features = ["toml"] }
+serde = { version = "1", features = ["derive"] }
 
 [workspace]
 members = [".", "crates/*"]
