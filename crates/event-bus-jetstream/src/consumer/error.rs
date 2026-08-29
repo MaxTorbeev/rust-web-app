@@ -1,8 +1,14 @@
+use nats_client::{AckError, ReceiveError};
 use thiserror::Error;
-use crate::AckError;
 
 #[derive(Debug, Error)]
 pub enum JetStreamConsumerError {
+  #[error("failed to receive incoming JetStream event")]
+  Receive(#[source] ReceiveError),
+
+  #[error("JetStream subscription closed unexpectedly")]
+  SubscriptionClosed,
+
   #[error("failed to ACK incoming JetStream event")]
   Ack(#[source] AckError),
 

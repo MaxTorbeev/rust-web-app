@@ -1,16 +1,22 @@
-use crate::{JetStreamConsumerError, NatsMessage};
 use std::time::Duration;
+
+use nats_client::NatsMessage;
+
+use super::error::JetStreamConsumerError;
 
 /// Решение о дальнейшей судьбе текущей доставки JetStream.
 ///
 /// Определяет, нужно ли подтвердить доставку, повторить её позднее
 /// или окончательно прекратить повторные попытки.
-pub enum SettlementAction {
-  /// Обработка завершена, удалить доставку из очереди
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SettlementAction {
+  /// Подтвердить успешную обработку и прекратить повторную доставку.
   Ack,
-  /// Сейчас обработать нельзя, доставить повторно после delay
+
+  /// Запросить повторную доставку после указанной задержки.
   Nak { delay: Duration },
-  /// рекратить повторные доставки этому consumer-у
+
+  /// Окончательно прекратить повторные доставки этому consumer-у.
   Terminate,
 }
 

@@ -15,7 +15,6 @@ mod publish_ack;
 mod publish_message;
 mod subscription;
 mod validation;
-mod consumer;
 
 pub use client::NatsClient;
 pub use config::{ConsumerConfig, NatsConfig, StreamConfig, StreamLimits};
@@ -28,7 +27,6 @@ pub use message::NatsMessage;
 pub use publish_ack::PublishAck;
 pub use publish_message::PublishMessage;
 pub use subscription::NatsSubscription;
-pub use consumer::*;
 
 #[cfg(test)]
 mod tests;

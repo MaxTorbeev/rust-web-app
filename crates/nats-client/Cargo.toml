@@ -9,4 +9,3 @@ async-nats = { version = "0.50", default-features = false, features = ["ring", "
 bytes = "1"
 thiserror = "2"
 futures-util = "0.3"
-event-bus = { path = "../event-bus" }
