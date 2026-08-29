@@ -1,22 +1,20 @@
 use std::sync::Arc;
-use std::time::Duration;
-
 use event_bus::{EventMessage, IncomingEventOutcome, IncomingEventProcessor, ProcessingErrorClass};
 use nats_client::{NatsMessage, NatsSubscription};
-
+use crate::consumer::JetStreamIncomingConsumerConfig;
 use super::error::JetStreamConsumerError;
 use super::settlement::SettlementAction;
 
 pub struct JetStreamIncomingConsumer {
   processor: Arc<IncomingEventProcessor>,
-  retry_delay: Duration,
+  config: JetStreamIncomingConsumerConfig,
 }
 
 impl JetStreamIncomingConsumer {
-  pub fn new(processor: Arc<IncomingEventProcessor>, retry_delay: Duration) -> Self {
+  pub fn new(processor: Arc<IncomingEventProcessor>, config: JetStreamIncomingConsumerConfig) -> Self {
     Self {
       processor,
-      retry_delay,
+      config,
     }
   }
 
@@ -65,7 +63,7 @@ impl JetStreamIncomingConsumer {
 
         match error.class() {
           ProcessingErrorClass::Retryable => SettlementAction::Nak {
-            delay: self.retry_delay,
+            delay: self.config.retry_delay(),
           },
           ProcessingErrorClass::Permanent => SettlementAction::Terminate,
         }
