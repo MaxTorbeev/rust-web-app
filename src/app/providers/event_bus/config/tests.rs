@@ -55,6 +55,42 @@ fn maps_nats_driver_to_complete_jetstream_config() {
   let _ = config.consumer;
 }
 
+#[test]
+fn maps_nats_driver_without_toml_file() {
+  let mut source = EventBusConfigSource::builder()
+    .load()
+    .expect("built-in Event Bus defaults must load");
+
+  source.driver = EventBusDriverSource::Nats;
+  source.app = Some("mxt_realtime".to_owned());
+  source.app_environment = Some("staging".to_owned());
+  source.nats.servers = Some(vec!["nats://nats:4222".to_owned()]);
+  source.nats.node_id = Some("realtime-staging-1".to_owned());
+  source.nats.stream.name = Some("MXT_REALTIME_EVENTS".to_owned());
+  source.nats.stream.replicas = 3;
+
+  let EventBusConfig::JetStream(config) = map(source).expect("env-only NATS config must be valid")
+  else {
+    panic!("NATS driver must map to JetStream config");
+  };
+
+  assert_eq!(config.nats.servers(), ["nats://nats:4222"]);
+  assert_eq!(config.processor.scope(), "realtime-staging-1");
+  assert_eq!(
+    config.processor.processing_timeout(),
+    Duration::from_secs(20)
+  );
+  assert_eq!(config.processor.lease_ttl(), Duration::from_secs(30));
+  assert_eq!(
+    config.processor.completed_record_ttl(),
+    Duration::from_secs(86_400)
+  );
+  assert_eq!(config.incoming.retry_delay(), Duration::from_secs(5));
+
+  let _ = config.stream;
+  let _ = config.consumer;
+}
+
 fn load_source() -> EventBusConfigSource {
   EventBusConfigSource::builder()
     .file("config/event_bus.toml")

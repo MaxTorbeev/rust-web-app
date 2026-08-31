@@ -133,6 +133,9 @@ jobs:
       DEPLOY_USER: ${{ vars.DEPLOY_USER }}
 
       EVENT_BUS_DRIVER: ${{ vars.EVENT_BUS_DRIVER }}
+      NATS_SERVERS: ${{ vars.NATS_SERVERS }}
+      NATS_STREAM_NAME: ${{ vars.NATS_STREAM_NAME }}
+      NATS_STREAM_REPLICAS: ${{ vars.NATS_STREAM_REPLICAS }}
 
       DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
       DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
@@ -175,6 +178,10 @@ jobs:
           for variable_name in \
             APP \
             APP_ENV \
+            EVENT_BUS_DRIVER \
+            NATS_SERVERS \
+            NATS_STREAM_NAME \
+            NATS_STREAM_REPLICAS \
             REDIS_PASSWORD \
             APP_REALTIME_API_KEY \
             APP_AUTH_LOGIN \
@@ -185,6 +192,19 @@ jobs:
               exit 1
             fi
           done
+
+          if [ "$EVENT_BUS_DRIVER" != "nats" ]; then
+            echo "::error::EVENT_BUS_DRIVER must be exactly 'nats' for cluster deployment"
+            exit 1
+          fi
+
+          case "$NATS_STREAM_REPLICAS" in
+            1|2|3|4|5) ;;
+            *)
+              echo "::error::NATS_STREAM_REPLICAS must be an integer from 1 to 5"
+              exit 1
+              ;;
+          esac
           
           printf 'APP=%s\n' "$APP" \
             >> "$environment_file"
@@ -193,6 +213,15 @@ jobs:
             >> "$environment_file"          
           
           printf 'EVENT_BUS_DRIVER=%s\n' "$EVENT_BUS_DRIVER" \
+            >> "$environment_file"
+
+          printf 'NATS_SERVERS=%s\n' "$NATS_SERVERS" \
+            >> "$environment_file"
+
+          printf 'NATS_STREAM_NAME=%s\n' "$NATS_STREAM_NAME" \
+            >> "$environment_file"
+
+          printf 'NATS_STREAM_REPLICAS=%s\n' "$NATS_STREAM_REPLICAS" \
             >> "$environment_file"
           
           printf 'RUST_LOG=%s\n' "${RUST_LOG:-info}" \
