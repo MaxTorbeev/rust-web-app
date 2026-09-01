@@ -9,6 +9,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 axum = "0.8.9"
 tokio = { version = "1.52.3", features = ["full"] }
+api-response = { path = "crates/api-response" }
 redis-client = { path = "crates/redis-client" }
 nats-client = { path = "crates/nats-client" }
 realtime = { path = "crates/realtime" }

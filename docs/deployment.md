@@ -77,7 +77,7 @@ OTel Collector доступны только внутри Docker network.
 GitHub Actions выполняет deployment на один `DEPLOY_HOST`:
 
 1. Проверяет frontend и Rust workspace.
-2. Один раз собирает immutable Docker image с тегом commit SHA.
+2. Один раз собирает Docker image с тегом полного commit SHA.
 3. Публикует image в GHCR.
 4. Загружает на сервер `compose.yml`, `.env`, frontend artifact и deployment
    scripts.
@@ -115,6 +115,9 @@ deployment недопустим: оба процесса разделят оди
 
 До появления настоящего readiness `docker compose up --wait` подтверждает запуск
 контейнеров, но не доказывает готовность приложения принимать трафик.
+
+Целевой HTTP-контракт, release identity и правила допуска нод к переключению
+трафика описаны в документе [Health endpoints и deployment semaphore](./health.md).
 
 ## Целевая HA-топология
 
@@ -214,6 +217,9 @@ Sticky sessions не заменяют общий PresenceStore и межузло
 При ошибке нода не возвращается в балансировщик, а приложение откатывается на
 предыдущий проверенный image SHA.
 
+Точный version-aware gate для rolling и blue-green deployment описан в
+[Health endpoints и deployment semaphore](./health.md).
+
 NATS и Redis не входят в обычный app deployment. NATS-серверы обслуживаются
 отдельно и обновляются строго по одному, чтобы сохранялся quorum.
 
@@ -256,6 +262,7 @@ NATS и Redis не входят в обычный app deployment. NATS-серв�
 ## Ссылки
 
 - [Текущий Compose](../compose.yml)
+- [Health endpoints и deployment semaphore](./health.md)
 - [Целевая кластерная архитектура](./clustering.md)
 - [NATS: forming a cluster](https://docs.nats.io/learn/clustering/forming-a-cluster)
 - [NATS: JetStream in a cluster](https://docs.nats.io/learn/topologies/jetstream-in-a-cluster)

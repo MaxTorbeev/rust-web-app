@@ -7,14 +7,27 @@ use redis_client::{RedisClient, RedisConfig};
 use crate::app::providers::EventBusProvider;
 
 mod config;
+mod health;
 mod http;
 mod listeners;
 mod state;
 mod providers;
+mod version;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
+  let app_version = version::AppVersion::CURRENT;
+
   let redis_config = RedisConfig::from_env()?;
   let redis = Arc::new(RedisClient::connect(&redis_config).await?);
+
+  let redis_health = redis_client::health::HealthCheck::new(Arc::clone(&redis));
+  let health = Arc::new(health::HealthCheck::new(app_version, redis_health));
+
+  tracing::info!(
+    version = health.version().version(),
+    revision = health.version().revision(),
+    "application starting"
+  );
 
   let auth = Arc::new(AuthConfig::from_env()?);
 
@@ -27,7 +40,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let event_bus = event_bus_runtime.event_bus();
 
-  let app_state = state::AppState::new(redis, auth, event_bus, realtime);
+  let app_state = state::AppState::new(redis, auth, event_bus, realtime, health);
 
   let routes = http::routes::init(app_state);
 

@@ -62,6 +62,10 @@ impl RedisClientError {
     )
   }
 
+  pub(crate) fn unexpected_ping_response() -> Self {
+    Self::new(RedisClientErrorKind::Response, UnexpectedPingResponseError)
+  }
+
   fn new(kind: RedisClientErrorKind, source: impl Error + Send + Sync + 'static) -> Self {
     Self {
       kind,
@@ -78,3 +82,7 @@ pub type RedisClientResult<T> = Result<T, RedisClientError>;
 struct UnsupportedScriptValueError {
   value_kind: &'static str,
 }
+
+#[derive(Debug, thiserror::Error)]
+#[error("expected PONG from Redis")]
+struct UnexpectedPingResponseError;

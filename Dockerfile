@@ -1,5 +1,8 @@
 FROM rust:1.94.1-bookworm AS builder
 
+ARG APP_BUILD_REVISION=development
+ENV APP_BUILD_REVISION=$APP_BUILD_REVISION
+
 WORKDIR /app
 
 COPY Cargo.toml Cargo.lock ./

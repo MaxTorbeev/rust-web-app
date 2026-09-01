@@ -101,6 +101,9 @@ jobs:
           file: ./Dockerfile
           push: true
 
+          build-args: |
+            APP_BUILD_REVISION=${{ github.sha }}
+
           tags: |
             ${{ steps.image.outputs.value }}
             ${{ steps.image.outputs.repository }}:production

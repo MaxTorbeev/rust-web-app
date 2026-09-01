@@ -25,13 +25,19 @@ impl RedisClient {
     Ok(Self { connection })
   }
 
-  pub async fn ping(&self) -> RedisClientResult<String> {
+  pub async fn ping(&self) -> RedisClientResult<()> {
     let mut conn = self.connection.clone();
 
-    redis::cmd("PING")
+    let response = redis::cmd("PING")
       .query_async::<String>(&mut conn)
       .await
-      .map_err(RedisClientError::command)
+      .map_err(RedisClientError::command)?;
+
+    if response == "PONG" {
+      Ok(())
+    } else {
+      Err(RedisClientError::unexpected_ping_response())
+    }
   }
 
   pub async fn set(&self, key: &str, value: &str) -> RedisClientResult<String> {

@@ -3,6 +3,7 @@ mod script_value;
 
 pub mod client;
 pub mod config;
+pub mod health;
 
 pub use client::RedisClient;
 pub use config::RedisConfig;

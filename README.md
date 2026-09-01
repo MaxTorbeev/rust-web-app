@@ -1,5 +1,11 @@
 # Rust websocket app
 
+## Документация
+
+- [Архитектура серверов и deployment](./docs/deployment.md)
+- [Health endpoints и deployment semaphore](./docs/health.md)
+- [Автономный и кластерный режимы](./docs/clustering.md)
+
 ## Roadmap
 - [ ] Доработать JWT
 - [ ] Добавить поддержку OpenTelemetry

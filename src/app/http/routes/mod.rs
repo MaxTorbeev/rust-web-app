@@ -10,6 +10,8 @@ use realtime::routes::{access_token, broadcast_message, websocket};
 
 pub fn init(state: AppState) -> Router {
   Router::new()
+    .route("/health/live", get(health::live))
+    .route("/health/ready", get(health::ready))
     .route("/auth/realtime/{application_id}/token", post(access_token))
     .route("/auth/login", post(login))
     .route("/auth/check", get(check))

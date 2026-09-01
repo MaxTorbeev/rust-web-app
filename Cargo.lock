@@ -1085,6 +1085,7 @@ dependencies = [
 name = "mxt-realtime"
 version = "0.0.3-alpha"
 dependencies = [
+ "api-response",
  "auth",
  "axum",
  "confique",
