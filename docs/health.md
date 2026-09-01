@@ -5,9 +5,11 @@
 Этот документ фиксирует целевой контракт health endpoints и правила допуска
 релиза к переключению трафика.
 
-Контракт ещё не реализован полностью. Сейчас `src/app/http/routes/health.rs`
-содержит пустой handler, маршрут не зарегистрирован, у контейнера `app` нет
-healthcheck, а Git revision не вшивается в Rust binary.
+Контракт реализован частично. Маршруты `GET /health/live` и
+`GET /health/ready` зарегистрированы, Git revision вшивается в Rust binary, а
+readiness проверяет Redis и JetStream topology. Ещё не реализованы node/slot и
+traffic state, lifecycle incoming consumer-а, общий timeout readiness,
+healthcheck контейнера `app` и deployment semaphore.
 
 Документ использует термин **deployment semaphore** или **deployment gate** для
 логического условия допуска новой группы нод к трафику. Это не mutex внутри
@@ -349,20 +351,20 @@ OTel Collector не входит в readiness. Потеря телеметрии
 Целевая структура:
 
 ```text
-src/app/health.rs
+src/app/health/
   ApplicationHealth
   ReadinessReport
   NodeInfo
   ReleaseInfo
 
-src/app/providers/event_bus/health.rs
+src/app/providers/event_bus/health/
   EventBusReadinessHandle
   EventBusRuntimeState
 
-crates/nats-client/src/health.rs
+crates/nats-client/src/health/
   NatsClient::verify_topology(...)
 
-src/app/http/routes/health.rs
+src/app/http/routes/health/
   live()
   ready()
 ```

@@ -3,6 +3,7 @@ use serde::Serialize;
 use support::health::HealthReport;
 
 use crate::app::health::HealthState;
+use crate::app::providers::EventBusHealthState;
 
 use super::{HEALTH_SCHEMA_VERSION, ReleaseResponse};
 
@@ -30,6 +31,13 @@ impl From<&HealthState> for ReadyHealthResponse {
           RedisHealthState::Up => CheckStatus::Up,
           RedisHealthState::Down(_) => CheckStatus::Down,
         },
+        jetstream: match state.event_bus() {
+          EventBusHealthState::Disabled => CheckStatus::Disabled,
+          EventBusHealthState::JetStream(nats_client::health::HealthState::Up) => CheckStatus::Up,
+          EventBusHealthState::JetStream(nats_client::health::HealthState::Down(_)) => {
+            CheckStatus::Down
+          }
+        },
       },
     }
   }
@@ -38,6 +46,7 @@ impl From<&HealthState> for ReadyHealthResponse {
 #[derive(Serialize)]
 struct HealthChecksResponse {
   redis: CheckStatus,
+  jetstream: CheckStatus,
 }
 
 #[derive(Serialize)]
@@ -52,4 +61,5 @@ enum ReadyStatus {
 enum CheckStatus {
   Up,
   Down,
+  Disabled,
 }

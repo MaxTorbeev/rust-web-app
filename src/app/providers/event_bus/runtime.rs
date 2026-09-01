@@ -1,25 +1,32 @@
-use std::future::pending;
-use std::sync::Arc;
+use super::{EventBusHealthCheck, EventBusRuntimeError};
 use event_bus::EventBus;
 use event_bus_jetstream::JetStreamIncomingConsumer;
-use super::{EventBusRuntimeError};
+use std::future::pending;
+use std::sync::Arc;
 
 pub struct EventBusRuntime {
   event_bus: Arc<EventBus>,
-  worker: Option<JetStreamIncomingConsumer>
+  worker: Option<JetStreamIncomingConsumer>,
+  health: EventBusHealthCheck,
 }
 
 impl EventBusRuntime {
-  pub (super) fn local(event_bus: Arc<EventBus>) -> Self {
+  pub(super) fn local(event_bus: Arc<EventBus>) -> Self {
     Self {
       event_bus,
-      worker: None
+      worker: None,
+      health: EventBusHealthCheck::Disabled,
     }
   }
-  pub (super) fn jetstream(event_bus: Arc<EventBus>, worker: JetStreamIncomingConsumer) -> Self {
+  pub(super) fn jetstream(
+    event_bus: Arc<EventBus>,
+    worker: JetStreamIncomingConsumer,
+    health: nats_client::health::HealthCheck,
+  ) -> Self {
     Self {
       event_bus,
-      worker: Some(worker)
+      worker: Some(worker),
+      health: EventBusHealthCheck::JetStream(health),
     }
   }
 
@@ -27,7 +34,11 @@ impl EventBusRuntime {
     Arc::clone(&self.event_bus)
   }
 
-  pub async fn run(mut self) -> Result<(), EventBusRuntimeError> {
+  pub(crate) fn health_check(&self) -> EventBusHealthCheck {
+    self.health.clone()
+  }
+
+  pub async fn run(self) -> Result<(), EventBusRuntimeError> {
     let Some(worker) = self.worker else {
       // У локального Event Bus нет фонового worker-а. Оставляем runtime в ожидании,
       // чтобы supervisor не воспринял отсутствие worker-а как завершение подсистемы
@@ -35,9 +46,6 @@ impl EventBusRuntime {
       return pending().await;
     };
 
-    worker
-      .run()
-      .await
-      .map_err(EventBusRuntimeError::Consumer)
+    worker.run().await.map_err(EventBusRuntimeError::Consumer)
   }
 }

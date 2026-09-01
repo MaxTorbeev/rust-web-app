@@ -16,12 +16,14 @@ mod publish_message;
 mod subscription;
 mod validation;
 
+pub mod health;
+
 pub use client::NatsClient;
 pub use config::{ConsumerConfig, NatsConfig, StreamConfig, StreamLimits};
 pub use error::{
   AckError, ConnectError, ConsumerConfigError, MessageMetadataError, NatsConfigError, PublishError,
   PublishMessageError, ReceiveError, StreamConfigError, StreamLimitsError, StreamSetupError,
-  SubscribeError,
+  SubscribeError, TopologyError,
 };
 pub use message::NatsMessage;
 pub use publish_ack::PublishAck;

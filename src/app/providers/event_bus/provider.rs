@@ -1,19 +1,19 @@
-use std::sync::Arc;
+use super::{EventBusConfig, EventBusProviderError, EventBusRuntime, JetStreamEventBusConfig};
+use crate::app::listeners;
 use event_bus::{EventBus, EventDispatcher, HandlerRegistrationError, IncomingEventProcessor};
 use event_bus_dedup_redis::RedisDedupStore;
 use event_bus_jetstream::{JetStreamEventPublisher, JetStreamIncomingConsumer};
 use nats_client::NatsClient;
-use realtime::{register_event_handlers, Realtime};
+use realtime::{Realtime, register_event_handlers};
 use redis_client::RedisClient;
-use crate::app::listeners;
-use super::{EventBusConfig, EventBusProviderError, EventBusRuntime, JetStreamEventBusConfig};
+use std::sync::Arc;
 
 pub struct EventBusProvider;
 
 impl EventBusProvider {
   pub async fn build(
     redis: Arc<RedisClient>,
-    realtime: Arc<Realtime>
+    realtime: Arc<Realtime>,
   ) -> Result<EventBusRuntime, EventBusProviderError> {
     let source = super::config::load()?;
     let config = super::config::map(source)?;
@@ -21,14 +21,14 @@ impl EventBusProvider {
 
     match config {
       EventBusConfig::Local => Ok(build_local(dispatcher)),
-      EventBusConfig::JetStream(config) => {
-        build_jetstream(redis, dispatcher, config).await
-      }
+      EventBusConfig::JetStream(config) => build_jetstream(redis, dispatcher, config).await,
     }
   }
 }
 
-fn build_dispatcher(realtime: Arc<Realtime>) -> Result<Arc<EventDispatcher>, HandlerRegistrationError> {
+fn build_dispatcher(
+  realtime: Arc<Realtime>,
+) -> Result<Arc<EventDispatcher>, HandlerRegistrationError> {
   let mut dispatcher = EventDispatcher::new();
 
   listeners::register(&mut dispatcher)?;
@@ -65,9 +65,9 @@ async fn build_jetstream(
 
   let subscription = nats.subscribe(&consumer).await?;
 
-  let publisher = Arc::new(
-    JetStreamEventPublisher::new(Arc::clone(&nats), subjects),
-  );
+  let health = nats_client::health::HealthCheck::new(Arc::clone(&nats), stream, consumer);
+
+  let publisher = Arc::new(JetStreamEventPublisher::new(Arc::clone(&nats), subjects));
 
   let event_bus = Arc::new(EventBus::with_distributed_publisher(
     Arc::clone(&dispatcher),
@@ -82,11 +82,7 @@ async fn build_jetstream(
     processor,
   ));
 
-  let worker = JetStreamIncomingConsumer::new(
-    processor,
-    subscription,
-    incoming,
-  );
+  let worker = JetStreamIncomingConsumer::new(processor, subscription, incoming);
 
-  Ok(EventBusRuntime::jetstream(event_bus, worker))
+  Ok(EventBusRuntime::jetstream(event_bus, worker, health))
 }

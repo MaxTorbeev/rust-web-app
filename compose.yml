@@ -16,6 +16,17 @@ services:
     volumes:
       - nats-data:/data
 
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1:8222/healthz
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+
     security_opt:
       - no-new-privileges:true
 
@@ -47,7 +58,7 @@ services:
 
     depends_on:
       nats:
-        condition: service_started
+        condition: service_healthy
       redis:
         condition: service_healthy
 

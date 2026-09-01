@@ -1,6 +1,6 @@
 use crate::{
   ConnectError, ConsumerConfig, NatsConfig, NatsSubscription, PublishAck, PublishError,
-  PublishMessage, StreamConfig, StreamSetupError, SubscribeError,
+  PublishMessage, StreamConfig, StreamSetupError, SubscribeError, TopologyError,
 };
 /// Generic access to the NATS JetStream transport.
 ///
@@ -62,6 +62,60 @@ impl NatsClient {
     if !incompatible_fields.is_empty() {
       return Err(StreamSetupError::incompatible_configuration(
         config.name(),
+        incompatible_fields,
+      ));
+    }
+
+    Ok(())
+  }
+
+  /// Verifies the configured JetStream stream and durable consumer without
+  /// creating or updating either resource.
+  ///
+  /// Выполняет свежие `STREAM.INFO` и `CONSUMER.INFO`, после чего проверяет
+  /// совместимость фактической конфигурации с ожидаемой. Метод ничего не
+  /// создаёт и не исправляет.
+  pub async fn verify_topology(
+    &self,
+    stream_config: &StreamConfig,
+    consumer_config: &ConsumerConfig,
+  ) -> Result<(), TopologyError> {
+    if consumer_config.stream_name() != stream_config.name() {
+      return Err(TopologyError::consumer_stream_mismatch(
+        consumer_config.durable_name(),
+        consumer_config.stream_name(),
+        stream_config.name(),
+      ));
+    }
+
+    let connection_state = self.jetstream.client().connection_state();
+    if connection_state != async_nats::connection::State::Connected {
+      return Err(TopologyError::core_unavailable(connection_state));
+    }
+
+    let stream = self
+      .jetstream
+      .get_stream(stream_config.name())
+      .await
+      .map_err(|source| TopologyError::stream_info(stream_config.name(), source))?;
+
+    let incompatible_fields = stream_config.incompatible_fields(&stream.cached_info().config);
+    if !incompatible_fields.is_empty() {
+      return Err(TopologyError::stream_configuration(
+        stream_config.name(),
+        incompatible_fields,
+      ));
+    }
+
+    let consumer = stream
+      .consumer_info(consumer_config.durable_name())
+      .await
+      .map_err(|source| TopologyError::consumer_info(consumer_config.durable_name(), source))?;
+
+    let incompatible_fields = consumer_config.incompatible_fields(&consumer.config);
+    if !incompatible_fields.is_empty() {
+      return Err(TopologyError::consumer_configuration(
+        consumer_config.durable_name(),
         incompatible_fields,
       ));
     }

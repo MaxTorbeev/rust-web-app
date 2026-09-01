@@ -1111,6 +1111,7 @@ dependencies = [
  "async-nats",
  "bytes",
  "futures-util",
+ "support",
  "thiserror",
  "tracing",
 ]

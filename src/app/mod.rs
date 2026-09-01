@@ -1,17 +1,17 @@
 use std::sync::Arc;
 
 use crate::app::config::HttpConfig;
+use crate::app::providers::EventBusProvider;
 use auth::AuthConfig;
 use realtime::{Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
-use crate::app::providers::EventBusProvider;
 
 mod config;
 mod health;
 mod http;
 mod listeners;
-mod state;
 mod providers;
+mod state;
 mod version;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,11 +21,10 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   let redis = Arc::new(RedisClient::connect(&redis_config).await?);
 
   let redis_health = redis_client::health::HealthCheck::new(Arc::clone(&redis));
-  let health = Arc::new(health::HealthCheck::new(app_version, redis_health));
 
   tracing::info!(
-    version = health.version().version(),
-    revision = health.version().revision(),
+    version = app_version.version(),
+    revision = app_version.revision(),
     "application starting"
   );
 
@@ -33,12 +32,16 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let realtime = Arc::new(Realtime::from_config(RealtimeConfig::from_env()?));
 
-  let event_bus_runtime = EventBusProvider::build(
-    Arc::clone(&redis),
-    Arc::clone(&realtime),
-  ).await?;
+  let event_bus_runtime =
+    EventBusProvider::build(Arc::clone(&redis), Arc::clone(&realtime)).await?;
 
   let event_bus = event_bus_runtime.event_bus();
+  let event_bus_health = event_bus_runtime.health_check();
+  let health = Arc::new(health::HealthCheck::new(
+    app_version,
+    redis_health,
+    event_bus_health,
+  ));
 
   let app_state = state::AppState::new(redis, auth, event_bus, realtime, health);
 
@@ -47,9 +50,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   // run our app with hyper, listening globally on port 3000
   let listener = tokio::net::TcpListener::bind(HttpConfig::from_env()?.url).await?;
 
-  let http_server = async move {
-    axum::serve(listener, routes).await
-  };
+  let http_server = async move { axum::serve(listener, routes).await };
 
   tokio::select! {
     result = http_server => {

@@ -7,6 +7,7 @@ mod publish_message;
 mod receive;
 mod stream_setup;
 mod subscribe;
+mod topology;
 
 pub use ack::AckError;
 pub use config::{ConsumerConfigError, NatsConfigError, StreamConfigError, StreamLimitsError};
@@ -17,3 +18,4 @@ pub use publish_message::PublishMessageError;
 pub use receive::ReceiveError;
 pub use stream_setup::StreamSetupError;
 pub use subscribe::SubscribeError;
+pub use topology::TopologyError;

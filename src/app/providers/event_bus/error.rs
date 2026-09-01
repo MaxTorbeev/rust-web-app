@@ -1,8 +1,8 @@
-use event_bus_jetstream::JetStreamConsumerError;
-use thiserror::Error;
-use event_bus::HandlerRegistrationError;
-use nats_client::{ConnectError, StreamSetupError, SubscribeError};
 use crate::app::providers::EventBusConfigMapperError;
+use event_bus::HandlerRegistrationError;
+use event_bus_jetstream::JetStreamConsumerError;
+use nats_client::{ConnectError, StreamSetupError, SubscribeError};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub(crate) enum EventBusProviderError {
