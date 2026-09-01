@@ -7,8 +7,8 @@
 
 Контракт реализован частично. Маршруты `GET /health/live` и
 `GET /health/ready` зарегистрированы, Git revision вшивается в Rust binary, а
-readiness проверяет Redis и JetStream topology. Ещё не реализованы node/slot и
-traffic state, lifecycle incoming consumer-а, общий timeout readiness,
+readiness проверяет Redis, JetStream topology и lifecycle incoming consumer-а.
+Ещё не реализованы node/slot и traffic state, общий timeout readiness,
 healthcheck контейнера `app` и deployment semaphore.
 
 Документ использует термин **deployment semaphore** или **deployment gate** для
@@ -313,6 +313,7 @@ handle:
 | `Starting` | `down` | `503` |
 | `Running` | `up` | Зависит от остальных checks |
 | `Failed` | `down` | `503`, затем процесс завершается |
+| `Stopped` | `down` | `503` |
 
 Для передачи последнего состояния подходит `tokio::sync::watch`. Состояние
 `Starting` сохраняется, пока worker фактически не начал polling delivery stream.
@@ -358,8 +359,12 @@ src/app/health/
   ReleaseInfo
 
 src/app/providers/event_bus/health/
-  EventBusReadinessHandle
-  EventBusRuntimeState
+  EventBusHealthCheck
+  EventBusHealthState
+
+crates/event-bus-jetstream/src/health/
+  HealthCheck
+  HealthState
 
 crates/nats-client/src/health/
   NatsClient::verify_topology(...)
@@ -377,10 +382,10 @@ src/app/http/routes/health/
 - application-level traffic state;
 - timeout readiness probes.
 
-`EventBusProvider` создаёт `EventBusReadinessHandle` вместе с runtime. Handle
-инкапсулирует режим EventBus, optional `Arc<NatsClient>`, ожидаемые
-`StreamConfig`/`ConsumerConfig` и `watch`-состояние worker. Поэтому
-`ApplicationHealth` может выполнить единый `event_bus.check()` и при этом не
+`event-bus-jetstream` создаёт cloneable consumer health check вместе с worker и
+оставляет sender lifecycle-состояния внутри worker-а. `EventBusProvider`
+объединяет этот check с NATS topology check и режимом EventBus. Поэтому
+`ApplicationHealth` может выполнить единый `event_bus.verify()` и при этом не
 получает `NatsClient` напрямую.
 
 `AppState` получает `Arc<ApplicationHealth>` как обычный peer-сервис. Сам
@@ -720,16 +725,15 @@ proxy Nginx опубликует новые маршруты наружу авт
 
 | Возможность | Состояние |
 |---|---|
-| Пустой `health()` handler | Есть |
-| Зарегистрированные health routes | Нет |
+| Зарегистрированные health routes | Есть |
 | `RedisClient::ping()` | Есть |
-| Наблюдаемое состояние EventBus runtime | Нет |
-| Read-only JetStream topology probe | Нет |
+| Наблюдаемое состояние incoming consumer | Есть |
+| Read-only JetStream topology probe | Есть |
 | App healthcheck в Compose | Нет |
 | Cargo SemVer | Есть |
 | Docker image tag по полному commit SHA | Есть |
 | OCI label с Git revision | Есть |
-| Git revision внутри binary | Нет |
+| Git revision внутри binary | Есть |
 | Стабильный `node.env` single-host ноды | Есть |
 | Deployment inventory из нескольких нод | Нет |
 | Отдельные blue/green slots | Нет |

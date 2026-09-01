@@ -11,6 +11,8 @@ mod publisher;
 mod subject;
 mod subject_config;
 
+pub mod health;
+
 pub use consumer::{
   JetStreamConsumerError, JetStreamIncomingConsumer, JetStreamIncomingConsumerConfig,
   JetStreamIncomingConsumerConfigError,

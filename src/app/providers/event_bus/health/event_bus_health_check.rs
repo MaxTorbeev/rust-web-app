@@ -1,5 +1,4 @@
-use std::future::Future;
-
+use event_bus_jetstream::health::HealthCheck as ConsumerHealthCheck;
 use nats_client::health::HealthCheck as NatsHealthCheck;
 use support::health::VerifyHealth;
 
@@ -9,17 +8,23 @@ use super::EventBusHealthState;
 #[derive(Clone)]
 pub(crate) enum EventBusHealthCheck {
   Disabled,
-  JetStream(NatsHealthCheck),
+  JetStream {
+    topology: Box<NatsHealthCheck>,
+    consumer: ConsumerHealthCheck,
+  },
 }
 
 impl VerifyHealth for EventBusHealthCheck {
   type Report = EventBusHealthState;
 
-  fn verify(&self) -> impl Future<Output = Self::Report> + Send + '_ {
-    async move {
-      match self {
-        Self::Disabled => EventBusHealthState::Disabled,
-        Self::JetStream(check) => EventBusHealthState::JetStream(check.verify().await),
+  async fn verify(&self) -> Self::Report {
+    match self {
+      Self::Disabled => EventBusHealthState::Disabled,
+      Self::JetStream { topology, consumer } => {
+        let topology = topology.verify().await;
+        let consumer = consumer.verify().await;
+
+        EventBusHealthState::JetStream { topology, consumer }
       }
     }
   }

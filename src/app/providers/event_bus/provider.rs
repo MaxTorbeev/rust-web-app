@@ -65,7 +65,7 @@ async fn build_jetstream(
 
   let subscription = nats.subscribe(&consumer).await?;
 
-  let health = nats_client::health::HealthCheck::new(Arc::clone(&nats), stream, consumer);
+  let topology_health = nats_client::health::HealthCheck::new(Arc::clone(&nats), stream, consumer);
 
   let publisher = Arc::new(JetStreamEventPublisher::new(Arc::clone(&nats), subjects));
 
@@ -83,6 +83,12 @@ async fn build_jetstream(
   ));
 
   let worker = JetStreamIncomingConsumer::new(processor, subscription, incoming);
+  let consumer_health = worker.health_check();
 
-  Ok(EventBusRuntime::jetstream(event_bus, worker, health))
+  Ok(EventBusRuntime::jetstream(
+    event_bus,
+    worker,
+    topology_health,
+    consumer_health,
+  ))
 }

@@ -21,12 +21,16 @@ impl EventBusRuntime {
   pub(super) fn jetstream(
     event_bus: Arc<EventBus>,
     worker: JetStreamIncomingConsumer,
-    health: nats_client::health::HealthCheck,
+    topology_health: nats_client::health::HealthCheck,
+    consumer_health: event_bus_jetstream::health::HealthCheck,
   ) -> Self {
     Self {
       event_bus,
       worker: Some(worker),
-      health: EventBusHealthCheck::JetStream(health),
+      health: EventBusHealthCheck::JetStream {
+        topology: Box::new(topology_health),
+        consumer: consumer_health,
+      },
     }
   }
 
