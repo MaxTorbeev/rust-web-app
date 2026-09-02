@@ -104,17 +104,18 @@ deployment недопустим: оба процесса разделят оди
 - автоматизировать установку и конфигурацию Nginx;
 - автоматизировать получение и обновление TLS-сертификата;
 - настроить host/cloud firewall;
-- добавить liveness endpoint для проверки процесса;
-- добавить readiness endpoint, проверяющий Redis, NATS и работающий JetStream
-  consumer;
-- добавить healthcheck приложения в Compose;
+- добавить healthcheck приложения в Compose на основе существующего
+  `/health/ready`;
+- использовать readiness как deployment gate до переключения трафика;
 - выполнить live smoke test полного пути:
   `publish -> JetStream -> consumer -> Redis dedup -> handler -> ACK`;
 - настроить внешний exporter для OTel Collector вместо одного `debug` exporter;
 - проверить backup и восстановление Redis AOF и JetStream volume.
 
-До появления настоящего readiness `docker compose up --wait` подтверждает запуск
-контейнеров, но не доказывает готовность приложения принимать трафик.
+`/health/live` и `/health/ready` уже реализованы; readiness проверяет Redis,
+JetStream topology и consumer lifecycle. Но у `app` пока нет Compose
+healthcheck, поэтому `docker compose up --wait` не использует этот сигнал для
+приложения и сам по себе не доказывает готовность принимать трафик.
 
 Целевой HTTP-контракт, release identity и правила допуска нод к переключению
 трафика описаны в документе [Health endpoints и deployment semaphore](./health.md).
@@ -177,23 +178,13 @@ failure domains, managed load balancer и общего HA Redis.
 
 ### Presence
 
-Обычные channel messages уже имеют delivery class `AllNodes` и могут быть
-доставлены каждому realtime-узлу через отдельный durable consumer.
+Обычные channel messages уже имеют delivery class `AllNodes`. Presence пока
+остаётся process-local, поэтому multi-node snapshot неполон; sticky sessions
+этого не исправляют.
 
-Presence пока хранится в памяти конкретного процесса. Поэтому запуск нескольких
-app-нод сейчас даст неполный presence snapshot: каждая нода увидит только своих
-клиентов.
-
-До горизонтального production deployment необходимо реализовать:
-
-- общий Redis-backed PresenceStore;
-- стабильный `REALTIME_NODE_ID` каждой app-ноды;
-- TTL/lease для соединений и нод;
-- очистку presence после аварийного завершения ноды;
-- надёжные presence events с ACK, retry и consumer deduplication;
-- удаление durable consumer при окончательном выводе app-ноды из эксплуатации.
-
-Sticky sessions не заменяют общий PresenceStore и межузловую доставку.
+Целевые Redis state, leases/fencing, outbox, ACK/retry/dedup, snapshot barrier и
+Ably-compatible Occupancy описаны в отдельном source of truth:
+[Кластерный Presence и Ably-compatible Occupancy](./presence-occupancy.md).
 
 ## Rolling deployment в HA-режиме
 
@@ -235,7 +226,7 @@ NATS и Redis не входят в обычный app deployment. NATS-серв�
 
 ### Этап 2. Подготовка к кластеру
 
-- liveness и readiness;
+- Compose healthcheck и readiness deployment gate;
 - автоматизированный TLS/edge provisioning;
 - live NATS/Redis smoke tests;
 - Redis-backed PresenceStore с lease/TTL;
@@ -264,5 +255,6 @@ NATS и Redis не входят в обычный app deployment. NATS-серв�
 - [Текущий Compose](../compose.yml)
 - [Health endpoints и deployment semaphore](./health.md)
 - [Целевая кластерная архитектура](./clustering.md)
+- [Кластерный Presence и Ably-compatible Occupancy](./presence-occupancy.md)
 - [NATS: forming a cluster](https://docs.nats.io/learn/clustering/forming-a-cluster)
 - [NATS: JetStream in a cluster](https://docs.nats.io/learn/topologies/jetstream-in-a-cluster)

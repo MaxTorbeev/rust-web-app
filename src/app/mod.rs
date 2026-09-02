@@ -32,8 +32,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let realtime = Arc::new(Realtime::from_config(RealtimeConfig::from_env()?));
 
-  let event_bus_runtime =
-    EventBusProvider::build(Arc::clone(&redis), Arc::clone(&realtime)).await?;
+  let event_bus_runtime = EventBusProvider::build(Arc::clone(&redis), Arc::clone(&realtime)).await?;
 
   let event_bus = event_bus_runtime.event_bus();
   let event_bus_health = event_bus_runtime.health_check();
