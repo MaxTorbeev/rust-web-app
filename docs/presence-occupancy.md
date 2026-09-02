@@ -69,32 +69,56 @@ Ably SDK `authUrl` или стандартным `/keys/{keyName}/requestToken`.
 - Один доменный контракт для memory- и Redis-реализаций.
 - Сохранение `ChannelHub` как локальной точки доставки WebSocket-кадров.
 
-## Высокая нагрузка: anonymous guest audience
+## Высокая нагрузка: неидентифицированная аудитория
 
-Гость является realtime attachment, но не Presence member. Он может получать
-обычные сообщения, Presence `SYNC` и Presence deltas, однако не может выполнять
-`ENTER`, `UPDATE`, `LEAVE` или publish. Поэтому guest-соединения не попадают в
-список Presence, но входят в стандартную Occupancy-метрику `connections`.
+В рассматриваемом гостевом профиле соединение без `clientId` является realtime
+attachment, но не Presence member. Оно может получать обычные сообщения,
+Presence `SYNC` и Presence deltas, однако capability профиля не разрешает
+`ENTER`, `UPDATE`, `LEAVE` или publish. Поэтому такое соединение не попадает в
+список Presence, но входит в стандартную Occupancy-метрику `connections`.
+
+Далее `unidentified` описывает отсутствие `clientId`, а `aggregated` — способ
+хранения Occupancy. Термин `guest` используется только как имя продуктового
+профиля токена и его прикладной policy.
 
 Для identified attachments и Presence members сохраняется точное хранение по
-connection. Для гостевых read-only attachments используется локальный
-абсолютный shard на каждой ноде:
+connection. Для неидентифицированных read-only attachments используется
+локальный агрегированный сегмент абсолютных значений на каждой ноде:
 
 ```text
 (application_id, channel, node_id, boot_generation)
     -> version, connections, subscribers, presence_subscribers, lease_deadline
 ```
 
-`ATTACH`/disconnect гостя изменяет shard в памяти ноды. Нода сбрасывает
-последнее абсолютное значение в Redis не реже одного раза в секунду с jitter
-`±10%`. Redis Lua принимает только более новую `version`, заменяет значение
-shard-а и пересчитывает общий gauge. Отдельная запись attachment и Presence
-event для каждого гостя не создаётся.
+`ATTACH` и отключение такого соединения изменяют локальный сегмент счётчиков в
+памяти узла.
+Изменённый сегмент записывается в Redis раз в секунду. Конкретный момент внутри
+секунды случайно выбирается при запуске узла, чтобы разные узлы не обращались к
+Redis одновременно. Поэтому задержка не превышает секунды, а один сегмент
+записывается не чаще одного раза в секунду.
 
-Publisher помечает изменившийся channel dirty и отправляет один полный
-Occupancy snapshot не чаще одного раза в секунду. Переход общего значения
-`0 ↔ >0` отправляется немедленно. Повторная публикация использует тот же
-`occupancy_version` и payload.
+Lua-скрипт Redis принимает только данные с более новой `version`, заменяет
+предыдущие абсолютные значения и пересчитывает общий счётчик. Для каждого
+такого подключения не создаются отдельная запись и отдельное событие Presence.
+
+Локальный обработчик хранит текущие абсолютные значения сегмента. При
+формировании начального снимка Occupancy Lua-скрипт атомарно возвращает общие
+метрики, а также фактически сохранённые в Redis версию и вклад этого сегмента.
+Сохранённый вклад заменяется текущим локальным значением, а не прибавляется к
+нему. Поэтому потеря ответа от предыдущей успешной записи не приводит к
+двойному счёту. Формирование снимка и запись в Redis выполняются последовательно
+одним обработчиком и не могут пересечься.
+
+Компонент публикации отмечает канал как изменённый и отправляет не более одного
+полного кластерного снимка Occupancy в секунду. Если общее значение переходит
+между нулём и ненулевым состоянием, событие создаётся без дополнительной
+задержки во время той же записи в Redis. Для локального действия это означает
+задержку не более чем до следующей секундной записи.
+
+При повторной публикации используются прежние `occupancy_version` и содержимое
+события. Получив кластерное событие, локальный `OccupancyEmitter` немедленно
+отправляет переход через ноль. Остальные изменения он объединяет и отправляет
+не позднее чем через 15 секунд.
 
 Нагрузка ограничивается числом dirty `(node, channel)`, а не числом быстрых
 connect/disconnect:
@@ -130,24 +154,30 @@ Occupancy events      ≈ dirty_channels / 1s
 ## Обязательные инварианты
 
 1. Redis является authoritative источником точных Presence attachments,
-   members, `presence_revision` и materialized Occupancy counters. Анонимные
-   guest attachments представлены в Redis абсолютными node shards и являются
-   bounded-eventual aggregate с flush interval не более одной секунды.
+   members, `presence_revision` и materialized Occupancy counters. Attachments,
+   учитываемые агрегированно, представлены в Redis абсолютными node shards и
+   являются bounded-eventual aggregate с flush interval не более одной секунды.
 2. Одна зафиксированная `presence_revision` создаёт ровно один canonical
-   `PresenceChannelChanged`. Guest-only churn не создаёт Presence event на
-   каждый attachment.
+   `PresenceChannelChanged`. Изменения только агрегированных attachments не
+   создают Presence event на каждый attachment.
 3. Точный Presence transition и запись canonical event в Redis outbox
-   выполняются одной атомарной операцией. Guest shard flush и обновление
-   Occupancy version также атомарны, но могут быть coalesced.
+   выполняются одной атомарной операцией. Запись агрегированного Occupancy shard
+   и обновление Occupancy version также атомарны, но могут быть coalesced.
 4. WebSocket `ACK` Presence mutation отправляется после Redis commit и durable
    outbox record, но не ждёт JetStream и другие ноды.
 5. Исходная нода не выполняет параллельный direct broadcast: событие возвращается
    через её собственный JetStream consumer.
-6. `ATTACH` не активируется, пока snapshot и buffered deltas не сведены по
-   revision.
+6. `ATTACH` не активируется, пока snapshot и buffered events не сведены по
+   `presence_revision` и `occupancy_version`.
 7. При недоступном Redis кластерный Presence не откатывается к process-local
-   state. Guest shard может продолжать локальный учёт до bounded flush error,
-   но нода становится `not ready` и не подтверждает stale aggregate.
+   state. Локальный агрегированный shard может продолжать учёт до bounded flush
+   error, но нода становится `not ready` и не подтверждает stale aggregate.
+8. Memory- и Redis-режимы используют один local channel projector. Memory mode
+   передаёт committed canonical event через локальный relay, а Redis mode —
+   только через outbox и JetStream; protocol handlers не ветвятся по режиму.
+9. Ошибка общей подготовки frame или projector state блокирует consumer ACK.
+   Переполнение либо закрытие очереди одного WebSocket отключает только этот
+   connection и не вызывает повторную доставку события всем остальным.
 
 ## Целевая архитектура
 
@@ -158,32 +188,38 @@ WebSocket action
 PresenceService
       |
       v
-PresenceStore
+PresenceStore + PresenceCommitDelivery
       |
-      +-- Redis authoritative state
-      +-- presence revision and occupancy version
-      +-- guest shard flush / dirty channels
-      `-- Redis Stream outbox
-                  |
-                  v
-          PresenceOutboxPublisher
-                  |
-                  v
-          NATS JetStream
-             /    |    \
-            v     v     v
-        node-1  node-2  node-3
-            |     |     |
-            `-- local ChannelHub
+      +-- memory commit --> LocalPresenceCommitDelivery
+      |                         |
+      |                         v
+      |                 local channel projector
+      |
+      `-- Redis authoritative state + Redis Stream outbox
+                                      |
+                                      v
+                              PresenceOutboxPublisher
+                                      |
+                                      v
+                              NATS JetStream
+                                 /    |    \
+                                v     v     v
+                            node-1  node-2  node-3
+                                |     |     |
+                                `-- local channel projector
+                                           |
+                                           v
+                                    local ChannelHub
 ```
 
-Guest attachments additionally go through a local shard actor:
+Attachments with aggregated Occupancy additionally go through a local shard
+actor:
 
 ```text
-guest ATTACH/DETACH
+unidentified ATTACH/DETACH
         |
         v
-local GuestOccupancyShard --(<= 1s absolute flush)--> Redis Lua
+local AggregatedOccupancyShard --(<= 1s absolute flush)--> Redis Lua
         |                                                |
         `-- local Presence SYNC/deltas                 v
                                                   Occupancy publisher
@@ -194,6 +230,14 @@ local GuestOccupancyShard --(<= 1s absolute flush)--> Redis Lua
 
 JetStream переносит уже зафиксированные canonical changes. Он не является
 источником snapshot и не восстанавливает потерянный Redis state.
+
+`PresenceService` всегда вызывает один и тот же `PresenceStore`, а затем
+внедрённый `PresenceCommitDelivery`. В memory mode store возвращает canonical
+event, local delivery синхронно применяет его через тот же projector, и ответ
+клиенту ставится в очередь только после успешной локальной обработки. В Redis
+mode store возвращает receipt уже durable outbox record, а delivery не выполняет
+отдельный publish: fan-out начинает `PresenceOutboxPublisher`. Конкретная пара
+реализаций выбирается один раз в composition root.
 
 На каждой ноде работают supervised runtimes:
 
@@ -225,6 +269,21 @@ wire identity member-а. Полный storage key имеет вид:
 своего токена. Произвольный `clientId` разрешается только отдельной серверной
 или wildcard-авторизацией.
 
+Авторизация identity представлена отдельным типом, а не строковым sentinel или
+`Vec<String>` с неявным значением wildcard:
+
+```rust
+enum PresenceClientIdPolicy {
+    Unidentified,
+    Bound(BTreeSet<String>),
+    Any,
+}
+```
+
+`Unidentified` означает отсутствие `clientId` и не разрешает Presence
+mutations. `Bound` содержит непустой нормализованный набор разрешённых identity,
+а `Any` выдаётся только отдельной серверной или wildcard-авторизацией.
+
 Основные типы:
 
 ```rust
@@ -250,7 +309,7 @@ struct Attachment {
     occupancy: Option<OccupancySubscription>,
 }
 
-struct GuestOccupancyShard {
+struct AggregatedOccupancyShard {
     owner: PresenceOwner,
     channel: ChannelKey,
     version: u64,
@@ -263,17 +322,28 @@ struct GuestOccupancyShard {
 struct PresenceSnapshot {
     members: Vec<PresenceMember>,
     presence_revision: u64,
+    occupancy_version: u64,
     occupancy: OccupancyMetrics,
 }
 
 struct CommittedTransition {
     presence_revision: Option<u64>,
     occupancy_version: u64,
-    event_id: Option<Uuid>,
+    event: Option<CommittedPresenceEvent>,
     duplicate: bool,
 }
 
-struct GuestShardResult {
+struct CommittedPresenceEvent {
+    event_id: Uuid,
+    change: PresenceChannelChanged,
+}
+
+enum PresenceMutationOutcome {
+    Committed(CommittedTransition),
+    Rejected(PresenceProtocolError),
+}
+
+struct OccupancyShardFlushResult {
     occupancy_version: u64,
     global_zero_boundary: bool,
     snapshot: OccupancyMetrics,
@@ -297,7 +367,7 @@ trait PresenceStore {
     async fn apply_presence(
         &self,
         command: PresenceBatchCommand,
-    ) -> Result<CommittedTransition, PresenceStoreError>;
+    ) -> Result<PresenceMutationOutcome, PresenceStoreError>;
 
     async fn detach(
         &self,
@@ -314,67 +384,102 @@ trait PresenceStore {
         channel: ChannelKey,
     ) -> Result<PresenceSnapshot, PresenceStoreError>;
 
-    async fn flush_guest_shard(
+    async fn flush_occupancy_shard(
         &self,
-        shard: GuestOccupancyShard,
-    ) -> Result<GuestShardResult, PresenceStoreError>;
+        shard: AggregatedOccupancyShard,
+    ) -> Result<OccupancyShardFlushResult, PresenceStoreError>;
+}
+
+trait PresenceCommitDelivery {
+    async fn after_commit(
+        &self,
+        transition: &CommittedTransition,
+    ) -> Result<(), PresenceDeliveryError>;
 }
 ```
+
+`LocalPresenceCommitDelivery` требует canonical event в committed transition и
+синхронно передаёт его в local projector. `RedisOutboxPresenceCommitDelivery`
+принимает receipt атомарного store commit, который по контракту уже означает
+запись event в outbox, и не публикует его отдельно. Ошибка local delivery не
+превращает committed mutation в новую: retry получает прежний outcome и повторяет
+доставку того же event ID.
 
 Команда содержит:
 
 - application и channel;
-- connection и authorized client IDs;
+- connection и typed `PresenceClientIdPolicy`;
 - `node_id` и `boot_generation`;
-- серверный timestamp;
+- request timestamp только для диагностики; в Redis mode canonical timestamp
+  назначается через Redis `TIME`;
 - normalized request hash;
 - stable operation ID;
 - payload и effective modes, когда применимо.
 
-Guest shard command не содержит member payload и не продвигает
-`presence_revision`. Он содержит абсолютные counters и `version`; повторная
-отправка той же или более старой version является no-op.
+`AttachCommand` содержит уже рассчитанные сервером `effective_modes` и
+effective Occupancy subscription. `PresenceBatchCommand` не принимает modes или
+Occupancy повторно: transition читает их из authoritative attachment. Store не
+вычисляет capability и не доверяет requested modes клиента.
+
+Вариант `AttachResult` для attachment-а с агрегированным учётом дополнительно
+содержит Redis contribution и version текущего shard, прочитанные атомарно с
+global Occupancy snapshot. Эти внутренние поля нужны только local overlay и не
+попадают в wire contract.
+
+Команда агрегированного Occupancy shard не содержит member payload и не
+продвигает `presence_revision`. Она содержит абсолютные counters и `version`;
+повторная отправка той же или более старой version является no-op.
 
 Один входной Presence `ProtocolMessage` обрабатывается как batch одного channel.
 Все валидные элементы batch получают одну channel revision и один canonical
 event. Частичный commit batch запрещён.
 
-Клиентские retry дедуплицируются по:
+Клиентские `PRESENCE` mutation retry дедуплицируются по:
 
 ```text
 (application_id, connection_id, msg_serial)
 ```
 
-Normalized payload хранится вместе с результатом. Повтор с тем же ключом:
+Normalized payload и typed `PresenceMutationOutcome` хранятся вместе. Повтор с
+тем же ключом:
 
 - не меняет state второй раз;
 - не увеличивает revision;
 - не создаёт второй outbox record;
-- возвращает сохранённый `ACK` или `NACK`.
+- возвращает прежний committed либо rejected outcome, из которого
+  `PresenceService` строит тот же `ACK` или `NACK`.
 
-Тот же ключ с другим normalized payload является protocol conflict. Для
-внутренних cleanup-команд stable operation ID включает owner generation,
-connection, channel и тип операции.
+Тот же ключ с другим normalized payload является protocol conflict.
 
-`PresenceService` использует этот operation ledger для любого Presence outcome,
-включая precondition `NACK`, который можно идентифицировать по connection и
-`msgSerial`. Сообщение без обязательного `msgSerial` отклоняется до mutation.
-Ошибка декодирования, при которой эти поля получить невозможно, не может быть
-дедуплицирована.
+`PresenceService` использует этот operation ledger для любого результата
+клиентской `PRESENCE` mutation, включая precondition `NACK`. Такое сообщение без
+обязательного `msgSerial` отклоняется до mutation. Ошибка декодирования, при
+которой эти поля получить невозможно, не может быть дедуплицирована.
 
-Outcome хранится до authoritative disconnect connection-а. Пока connection
-жив, TTL ledger продлевается вместе с owner lease и не может истечь. Disconnect
-и reaper помечают ledger закрытым, но удаляют его только после safety TTL, не
-меньшего максимального поддерживаемого окна retry/resume. Иначе поздний повтор
-того же `msgSerial` создаст новую revision.
+`ATTACH` не использует этот ledger: повторный attach естественно
+идемпотентен по `(application_id, channel, connection_id)`, не увеличивает
+counters и возвращает свежий snapshot. Повторный `DETACH` является успешным
+idempotent cleanup. Для disconnect, reaper и других внутренних cleanup-команд
+stable operation ID включает owner generation, connection, channel и тип
+операции.
+
+Запись `PresenceMutationOutcome` хранится до authoritative disconnect
+connection-а. Пока connection жив, TTL ledger продлевается вместе с owner lease
+и не может истечь. Disconnect и reaper помечают ledger закрытым, но удаляют его
+только после safety TTL, не меньшего максимального поддерживаемого окна
+retry/resume. Иначе поздний повтор того же `msgSerial` создаст новую revision.
 
 `attach_and_snapshot` при повторном attach не увеличивает counters. Он атомарно
-возвращает свежий snapshot и текущую revision, чтобы повторный ответ не
-восстанавливал устаревший snapshot.
+возвращает свежий snapshot и текущие Presence/Occupancy versions, чтобы повторный
+ответ не восстанавливал устаревший snapshot.
 
 Будущие `InMemoryPresenceStore` и `RedisPresenceStore` проходят один contract
 test suite. Memory-реализация нужна для автономного режима, но её внутреннее
 устройство не определяет доменную модель.
+
+`PresenceStoreError` содержит только инфраструктурные, serialization и
+storage-level ошибки. Ожидаемый protocol rejection не маскируется под store
+error и возвращается через `PresenceMutationOutcome::Rejected`.
 
 ## Redis authoritative model
 
@@ -390,7 +495,7 @@ APP.APP_ENV.presence.v1
 - attachments канала;
 - members канала;
 - materialized Occupancy metrics;
-- guest occupancy shards `(node_id, boot_generation, channel)` с version;
+- aggregated occupancy shards `(node_id, boot_generation, channel)` с version;
 - dirty-channel index и occupancy publish deadlines;
 - reverse index connection -> channels и members;
 - reverse index `(node_id, boot_generation) -> connections`;
@@ -411,24 +516,34 @@ encoding. Необработанные имена channel не использу�
 4. меняет attachment/member и reverse indexes;
 5. пересчитывает затронутые exact Occupancy counters;
 6. при реальном Presence изменении увеличивает `presence_revision` ровно один раз;
-7. формирует полный transport-independent record для одного
+7. получает canonical timestamp через Redis `TIME` и формирует полный
+   transport-independent record для одного
    `PresenceChannelChanged`;
 8. выполняет `XADD` этого сообщения в outbox;
 9. сохраняет operation outcome;
-10. возвращает `presence_revision`, event ID и snapshot, если это attach.
+10. возвращает committed event, versions и snapshot, если это attach.
 
-Отдельный `flush_guest_shard` Lua transition атомарно:
+Отдельный `flush_occupancy_shard` Lua transition атомарно:
 
 1. проверяет lease и точную `boot_generation` shard-а;
 2. отклоняет version, которая не новее сохранённой;
-3. заменяет абсолютные guest counters shard-а;
+3. заменяет абсолютные counters агрегированного shard-а;
 4. применяет разницу к materialized Occupancy counters;
 5. увеличивает `occupancy_version` только при изменении gauge;
 6. помечает channel dirty и сохраняет ближайший publish deadline;
 7. возвращает полный snapshot и факт глобального `0 ↔ >0`.
 
-Обычный guest flush не создаёт Presence revision и отдельную outbox entry.
-Dirty-channel publisher создаёт один coalesced occupancy event по deadline.
+Обычная запись агрегированного shard-а не создаёт Presence revision и отдельную
+outbox entry. Dirty-channel publisher создаёт один coalesced occupancy event по
+deadline.
+
+Claim и завершение dirty-channel publication выполняются versioned Lua
+transition. Publisher атомарно фиксирует `(channel, occupancy_version,
+deadline)`, формирует outbox event для этой версии и очищает dirty marker только
+если текущий `occupancy_version` всё ещё совпадает с claimed. Если concurrent
+flush уже продвинул version, marker и ближайший deadline сохраняются для
+следующей публикации. Поэтому publication старого snapshot не может потерять
+более новое изменение.
 
 No-op и отклонённая команда не создают новую revision. Redis mutation с
 последующим отдельным `EventBus::publish` запрещена: процесс может завершиться
@@ -439,6 +554,11 @@ No-op и отклонённая команда не создают новую re
 operation кандидат игнорируется и возвращается исходный event ID. Outbox entry
 содержит `event_name`, `schema_version`, event ID и полный payload, поэтому
 publisher может восстановить тот же `EventMessage` без чтения mutable state.
+
+В memory mode та же canonical change возвращается в
+`CommittedPresenceEvent`, но в Redis mode источником доставки остаётся только
+outbox. Наличие event в результате commit не разрешает `PresenceService`
+публиковать его параллельно.
 
 V1 предполагает один логический Redis primary, на котором Lua имеет атомарный
 доступ ко всем перечисленным ключам. Redis Cluster потребует отдельного дизайна
@@ -455,8 +575,9 @@ Reaper не проходит через проверку lease уже умерш
 Для каждой зафиксированной `presence_revision` создаётся ровно один canonical
 `PresenceChannelChanged` с `DeliveryClass::AllNodes`. Точные identified
 attachment transitions также могут содержать немедленный Occupancy snapshot
-без продвижения Presence revision. Для guest-only churn создаётся latest-wins
-Occupancy snapshot с отдельным `occupancy_version`.
+без продвижения Presence revision. Для изменений только агрегированных
+attachments создаётся latest-wins Occupancy snapshot с отдельным
+`occupancy_version`.
 
 ```rust
 struct PresenceChannelChanged {
@@ -489,19 +610,26 @@ struct OccupancyChange {
 Возможные варианты:
 
 - `UPDATE` member-а: только `presence_deltas`;
-- guest `ATTACH`/`DETACH`: только coalesced `occupancy`, без Presence revision;
+- `ATTACH`/`DETACH` агрегированного attachment-а: только coalesced `occupancy`,
+  без Presence revision;
 - identified `ATTACH`: только `occupancy`;
 - `ENTER` или `LEAVE`: delta и Occupancy snapshot в одном envelope;
 - `DETACH`/disconnect: несколько leave deltas и Occupancy snapshot.
 
 Это намеренно не две записи `PresenceChanged` и `OccupancyChanged` с одинаковой
 revision. Presence consumer использует `presence_revision`, а Occupancy
-consumer — latest-wins `occupancy_version`; guest churn не увеличивает
-Presence cursor.
+consumer — latest-wins `occupancy_version`; churn агрегированных attachments не
+увеличивает Presence cursor.
 
 Occupancy передаётся полным gauge snapshot, а не `+1/-1`. `message_id`,
 timestamp и payload Presence delta также назначаются до outbox, чтобы каждая
 нода отправляла одинаковый wire payload.
+
+В Redis mode `occurred_at_ms` и timestamps всех canonical Presence deltas
+назначаются внутри commit через Redis `TIME`. Application request timestamp
+используется только для диагностики. Порядок определяется revision, а не
+часами. В memory mode тот же контракт использует единственный внедрённый
+process clock.
 
 Внутренняя Redis revision не является самостоятельным Ably wire field. Для
 протокольной границы сервер формирует opaque `channelSerial`; полная Ably
@@ -539,12 +667,16 @@ durable дальнейшую доставку.
 
 Обычный `EventBus::publish` для outbox не подходит, потому что создаёт новый
 event ID. Реализация должна добавить явный путь публикации подготовленного
-`EventMessage` либо передавать его непосредственно transport publisher-у.
+`EventMessage` либо передавать его непосредственно transport publisher-у. Этот
+же prepared-message contract использует local commit delivery, но направляет
+event сразу в локальный projector, а не в transport publisher.
 
 Гарантии ACK:
 
 - Redis commit + outbox означает, что canonical change сохранено.
 - WebSocket client `ACK` означает Redis commit и durable outbox record.
+- В memory mode WebSocket client `ACK` означает, что canonical event успешно
+  применён локальным projector и поставлен в здоровые локальные очереди.
 - JetStream publish ACK означает запись сообщения в stream.
 - Consumer ACK означает обработку одной конкретной realtime-нодой.
 - Ни один ACK не означает получение события всеми браузерами.
@@ -558,10 +690,16 @@ Consumer:
 1. декодирует envelope и проверяет schema/application;
 2. выполняет dedup claim по `(node_id, event_id)`;
 3. передаёт событие в локальный ordered channel projector;
-4. буферизует его для pending attachments либо enqueue-ит локальным active
-   recipients;
+4. готовит общий frame, буферизует его для pending attachments либо enqueue-ит
+   локальным active recipients;
 5. сохраняет complete dedup result;
 6. отправляет transport ACK.
+
+Ошибка подготовки общего frame, чтения snapshot либо состояния projector
+является retryable и запрещает complete/ACK. `QueueFull` или `QueueClosed`
+конкретного recipient-а запрашивает shutdown и полный disconnect cleanup этого
+connection, но не является ошибкой всего event: здоровые recipients не получают
+повтор из-за одного медленного клиента.
 
 Повторный `event_id` успешно ACK-ается без повторного применения. Presence
 revision ниже или равная уже применённой является stale no-op. Occupancy event с
@@ -570,25 +708,27 @@ revision при наличии локальных recipients запускает 
 пропускается.
 Отсутствие локальных recipients считается успешной обработкой.
 
-Consumer cursor принадлежит event stream канала. Snapshot одного attachment не
-продвигает этот cursor и не может скрыть event от уже active attachments.
-Snapshot `presence_revision` хранится как barrier конкретного pending
-attachment; `occupancy_version` хранится отдельно.
+Consumer cursors принадлежат event stream канала. Snapshot одного attachment не
+продвигает эти cursors и не может скрыть event от уже active attachments.
+Snapshot `presence_revision` и `occupancy_version` хранятся как две независимые
+границы конкретного pending attachment.
 
 При gap локальный channel projector:
 
 1. атомарно переходит в `Resyncing`;
 2. буферизует все последующие events;
-3. атомарно читает Redis snapshot вместе с `presence_revision`;
+3. атомарно читает Redis snapshot вместе с `presence_revision` и
+   `occupancy_version`;
 4. отправляет active presence subscribers corrective `SYNC`, а Occupancy
    subscribers — отфильтрованный полный snapshot;
 5. отбрасывает buffered Presence events с revision не выше snapshot;
-6. replay-ит более новые Presence events по revision;
-7. обновляет channel cursor и возвращается в `Active`.
+6. отбрасывает buffered Occupancy events с version не выше snapshot;
+7. replay-ит более новые events в порядке соответствующей revision/version;
+8. обновляет оба channel cursor и возвращается в `Active`.
 
 Dedup completion и consumer ACK выполняются только после успешного resync.
-Ошибка snapshot/enqueue является retryable, даёт `NAK` и делает projection
-unhealthy; cursor при этом не продвигается.
+Ошибка snapshot, общей сериализации или projector state является retryable,
+даёт `NAK` и делает projection unhealthy; cursors при этом не продвигаются.
 
 Retryable ошибка даёт `NAK`. Неизвестная schema или необратимо повреждённый
 payload получают `TERM`/DLQ и переводят обязательную проекцию в unhealthy
@@ -615,10 +755,17 @@ atomic Redis state + outbox commit
 fallback. Потерянный ответ повторяется с тем же `msgSerial`, а сохранённый
 outcome возвращается без нового commit.
 
-Guest `ATTACH`/`DETACH` подтверждается после локальной регистрации или удаления
-shard contribution. Global Occupancy commit выполняется следующим shard flush;
-поэтому ACK guest attachment не обещает, что все ноды уже видят новое значение
-`connections`. Initial snapshot имеет bounded staleness до одного секунды.
+В memory mode store mutation возвращает тот же canonical event в local commit
+delivery. `ACK` ставится после успешного применения через общий projector. Это
+не direct broadcast из protocol handler; различается только выбранная в
+composition root commit delivery.
+
+`ATTACH`/`DETACH` неидентифицированного соединения подтверждается после
+локальной регистрации или удаления shard contribution. Global Occupancy commit
+выполняется следующим shard flush; поэтому ACK такого attachment-а не обещает,
+что все ноды уже видят новое значение `connections`. Собственный initial
+snapshot уже включает локальное абсолютное значение shard через overlay;
+остальные ноды увидят его не позднее следующего flush.
 
 ## `ATTACH`, `SYNC` и snapshot barrier
 
@@ -628,8 +775,8 @@ Target attach flow:
 2. Создать локальный pending attachment и начать буферизовать события channel
    для этого connection.
 3. Атомарно выполнить `attach_and_snapshot`.
-4. Получить `{members, presence_revision, occupancy, effective_modes}` после регистрации
-   authoritative attachment.
+4. Получить `{members, presence_revision, occupancy, occupancy_version,
+   effective_modes}` после регистрации authoritative attachment.
 5. Подготовить единый упорядоченный ответ:
    - `ATTACHED` с recognized params, effective flags и opaque `channelSerial`;
    - `SYNC` с members в состоянии `Present`;
@@ -637,18 +784,24 @@ Target attach flow:
 6. Вызвать локальный `finish_attach`:
    - поставить `ATTACHED`, `SYNC` и initial Occupancy в outbound queue;
    - отбросить Presence events с `presence_revision <= snapshot.presence_revision`;
-   - отсортировать и enqueue-ить более новые Presence events;
-   - сохранить attachment barrier/cursor;
+   - отбросить Occupancy events с
+     `occupancy_version <= snapshot.occupancy_version`;
+   - отсортировать и enqueue-ить более новые events по соответствующей версии;
+   - сохранить обе attachment barriers/cursors;
    - перевести attachment из `Pending` в `Active`.
 
-Для guest attachment `attach_and_snapshot` не записывает connection в Redis и
-не меняет `presence_revision`. Локальный actor увеличивает guest shard, а
-`SYNC` строится только из Redis Presence members. Поэтому гость получает
-актуальный список Presence без создания собственной member-записи. Initial
-Occupancy может отражать shard flush с задержкой до одной секунды.
+Для attachment-а с агрегированным учётом `attach_and_snapshot` не записывает
+connection в Redis и не меняет `presence_revision`. Локальный actor увеличивает
+агрегированный shard, а `SYNC` строится только из Redis Presence members.
+Поэтому неидентифицированное соединение получает актуальный список Presence без
+создания собственной member-записи. Initial Occupancy заменяет сохранённый
+Redis contribution текущего shard его локальным абсолютным значением и поэтому
+уже учитывает само attachment. Overlay и concurrent flush сериализованы local
+shard actor-ом.
 
-Pending barrier устанавливается до Redis transition. Поэтому delta, вошедшая в
-snapshot, отбрасывается, а более новая delta всегда оказывается после `SYNC`.
+Pending barrier устанавливается до Redis transition. Поэтому Presence delta или
+Occupancy snapshot, вошедшие в snapshot, отбрасываются по своей revision/version,
+а более новое событие всегда оказывается после `SYNC` и initial Occupancy.
 Фильтрация выполняется только для этого attachment: те же события продолжают
 доставляться другим active attachments.
 
@@ -678,7 +831,7 @@ cleanup удаляет authoritative attachment.
 
 - lease TTL: 15 секунд;
 - renewal interval: 5 секунд;
-- reaper poll interval: не более 1 секунды для guest shards.
+- reaper poll interval: не более 1 секунды для aggregated occupancy shards.
 
 Renewal продлевает lease Lua-скриптом только при совпадении ожидаемой
 generation. Если непросроченный lease того же node ID принадлежит другой
@@ -707,7 +860,7 @@ Reaper:
 5. перед каждым batch проверяет cleanup token и удаляет только записи с точным
    owner match;
 6. для exact members создаёт leave transitions через тот же Lua и outbox, а
-   guest shards удаляет агрегированно и помечает channel dirty;
+   aggregated occupancy shards удаляет целиком и помечает channel dirty;
 7. удаляет generation indexes после завершения.
 
 Новая generation с тем же node ID не может быть удалена reaper-ом старой
@@ -737,12 +890,13 @@ Authoritative counters:
 `publishers` не означает «connection хотя бы раз публиковал». Mode-based
 метрики считаются из effective channel modes attachment-а.
 
-Для guest attachment значения такие: `connections=1`, `subscribers=1`,
-`presenceSubscribers=1` при явно запрошенном Presence subscribe mode, а
-`publishers=0`, `presenceConnections=0` и `presenceMembers=0`. В materialized
-gauge итоговые значения складываются из exact identified counters и всех
-принятых guest shards. `connections` — это число channel attachments, а не
-число уникальных людей или `clientId`.
+Для неидентифицированного attachment-а гостевого профиля значения такие:
+`connections=1`, `subscribers=1`, `presenceSubscribers=1` при явно запрошенном
+Presence subscribe mode, а `publishers=0`, `presenceConnections=0` и
+`presenceMembers=0`. В materialized gauge итоговые значения складываются из
+exact identified counters и всех принятых aggregated occupancy shards.
+`connections` — это число channel attachments, а не число уникальных людей или
+`clientId`.
 
 Requested modes приходят в `ATTACH.flags`. Effective modes — пересечение
 requested modes и token capabilities — возвращаются в `ATTACHED.flags`. Если
@@ -759,10 +913,12 @@ Occupancy counters нельзя объявлять корректными.
 
 ## Token authentication и Ably SDK
 
-`profile=guest` — внутренний параметр прикладного API, но не параметр Ably
-SDK. Для `authUrl` SDK отправляет `application/x-www-form-urlencoded`
-параметры. Guest определяется отсутствующим `clientId` и capability, которая
-ограничена сервером:
+`profile=guest` — внутренний параметр прикладного API, но не параметр Ably SDK.
+На протокольном уровне такое соединение называется unidentified, потому что у
+него отсутствует `clientId`. Термин `guest` далее относится только к продуктовому
+профилю токена и его capability policy. Для `authUrl` SDK отправляет
+`application/x-www-form-urlencoded` параметры. Capability профиля ограничена
+сервером:
 
 ```text
 capability={"chat:room":["channel-metadata","subscribe"]}
@@ -833,7 +989,7 @@ envelope `{ "data": { "message": "..." } }` для application API:
 ### Ably-compatible REST token endpoint для `ably-php-laravel`
 
 `ably-php-laravel` является REST-only SDK. Он не открывает WebSocket и не
-управляет guest Presence. Чтобы Laravel мог вызвать
+управляет Presence-состоянием realtime-соединений. Чтобы Laravel мог вызвать
 `Ably::auth()->requestToken()`, сервер должен дополнительно поддержать
 стандартный endpoint:
 
@@ -866,7 +1022,8 @@ $tokenDetails = Ably::auth()->requestToken([
 ]);
 ```
 
-`clientId` для guest не передаётся. Rust возвращает стандартный TokenDetails:
+`clientId` для гостевого профиля не передаётся. Rust возвращает стандартный
+TokenDetails:
 
 ```json
 {
@@ -887,7 +1044,7 @@ $tokenDetails = Ably::auth()->requestToken([
 
 ### Token load
 
-Выдача JWT не выполняет Presence transition и не пишет guest attachment в
+Выдача JWT не выполняет Presence transition и не регистрирует attachment в
 Redis. При TTL 10 минут устойчивый refresh rate приблизительно равен
 `active_connections / 600` плюс rate новых подключений. Для 30 000 активных
 гостей это около 50 refresh requests/s до учёта churn. Rate limiting выполняется
@@ -965,7 +1122,7 @@ Occupancy передаётся обычным `MESSAGE`. Ниже показан
 После initial snapshot:
 
 - пересечение нулевой границы `0 <-> non-zero` любой включённой категорией
-  отправляется немедленно;
+  отправляется немедленно после получения соответствующего cluster event;
 - остальные изменения coalesce до последнего snapshot;
 - debounce не превышает 15 секунд;
 - подписка `metrics` реагирует на любую из шести категорий;
@@ -1033,10 +1190,13 @@ Readiness кластерной ноды учитывает:
 | NATS недоступен | Outbox накапливается, retry сохраняет event ID, readiness деградирует |
 | Падение после publish ACK до outbox ACK | Возможен повтор publish; `Nats-Msg-Id` и consumer dedup делают его безопасным |
 | Consumer упал после local enqueue до ACK | JetStream повторяет event; event dedup/revision защищают повторное применение |
+| Очередь одного WebSocket переполнена или закрыта | Этот connection получает shutdown и cleanup; событие для ноды успешно ACK-ается без повторной доставки здоровым recipients |
 | Обнаружен gap revision | Активные локальные проекции resync-ятся из Redis |
-| Guest shard flush повторён или пришёл не по порядку | Redis принимает только более новую shard version; counters не удваиваются |
-| Нода упала с активными гостями | Reaper удаляет весь shard после lease expiry; временный ghost ограничен TTL |
-| Guest churn внутри flush window | В Redis и JetStream попадает последний полный gauge, а не event на каждый connect/disconnect |
+| Запись aggregated occupancy shard повторена или пришла не по порядку | Redis принимает только более новую shard version; counters не удваиваются |
+| Ответ успешной записи occupancy shard потерян | Следующий snapshot читает фактически сохранённые contribution/version и строит overlay без двойного счёта |
+| Запись occupancy shard изменила gauge во время Occupancy publication | Versioned CAS не очищает более новый dirty marker; следующая publication отправляет новую version |
+| Нода упала с активными неидентифицированными соединениями | Reaper удаляет весь shard после lease expiry; временный ghost ограничен TTL |
+| Churn агрегированных attachments внутри flush window | В Redis и JetStream попадает последний полный gauge, а не event на каждый connect/disconnect |
 | Guest token refresh storm | TTL jitter распределяет expiry; rate limiter возвращает `429` с `Retry-After` |
 | Два reaper-а | Cleanup lock, operation ID и generation checks делают cleanup идемпотентным |
 | Переиспользован node ID | Fencing не даёт поколениям менять или удалять чужой state |
@@ -1049,31 +1209,37 @@ Redis failover.
 
 ## Этапы реализации
 
-1. Добавить domain types и `PresenceStore`; перенести текущую local-логику в
-   memory adapter и общий contract test.
+1. Добавить domain types, typed mutation outcome и `PresenceStore`; подключить
+   модуль к crate, перенести текущую local-логику в memory adapter и общий
+   contract test.
 2. Ввести capability resolver, requested/effective channel modes и
    authoritative attachment model.
-3. Реализовать Redis schema, Lua transitions, protocol dedup, revisions и
-   durable outbox, включая guest shards и dirty-channel index.
-4. Добавить `PresenceChannelChanged`, публикацию prepared `EventMessage` и
-   ordered handler `AllNodes`.
-5. Перевести `ENTER`, `UPDATE`, `LEAVE`, `DETACH` и disconnect на store; убрать
-   direct broadcast.
-6. Реализовать pending attach barrier, opaque `channelSerial` и resync при
-   revision gap.
+3. Добавить `PresenceChannelChanged`, prepared `EventMessage`, общий ordered
+   projector и local commit delivery; проверить полный memory-mode путь до ACK.
+4. Перевести `ENTER`, `UPDATE`, `LEAVE`, `DETACH` и disconnect на store/projector
+   и убрать direct broadcast из protocol handlers.
+5. Реализовать Redis schema, Lua transitions, protocol dedup, обе versions и
+   durable outbox, включая versioned dirty-channel publication.
+6. Реализовать pending attach barrier для `presence_revision` и
+   `occupancy_version`, opaque `channelSerial` и resync при gap.
 7. Добавить `boot_generation`, lease renewer, fencing и reaper.
 8. Расширить wire types: `params`, modes, `encoding` и metadata обычного
    `Message`.
-9. Реализовать шесть Occupancy metrics, guest shard flush и local debounce
-   emitter.
-10. Ввести guest policy и capability enforcement для `authUrl`, а также
-    стандартный `/keys/{keyName}/requestToken` adapter для PHP SDK.
-11. Подключить runtimes к composition root, readiness и observability.
-12. Выполнить live two-node failure smoke до включения cluster Presence в
+9. Реализовать шесть Occupancy metrics, запись aggregated occupancy shard и
+   local debounce emitter.
+10. Подключить обязательные Presence runtimes к composition root, readiness и
+    observability.
+11. Выполнить live two-node failure smoke до включения cluster Presence в
     production.
+12. Отдельными последующими milestones добавить guest `authUrl`, Occupancy wire
+    profile и `/keys/{keyName}/requestToken` adapter для PHP SDK. Они не блокируют
+    базовый memory/Redis Presence, если соответствующий внешний профиль ещё не
+    включён.
 
-Этапы 2 и 3 могут разрабатываться параллельно, но cluster Presence нельзя
-включать до завершения обоих.
+После стабилизации этапа 1 capability work из этапа 2 и Redis work из этапа 5
+могут разрабатываться параллельно. Cluster Presence нельзя включать до
+завершения этапов 1–11 и live acceptance; расширения этапа 12 включаются только
+для соответствующего внешнего профиля.
 
 ## Тесты и acceptance criteria
 
@@ -1081,17 +1247,25 @@ Redis failover.
 
 - enter/update/leave и mixed batch;
 - несколько client IDs одного connection на уровне store;
+- unidentified, bounded и wildcard client identity проверяются typed policy без
+  строкового sentinel;
 - повтор `msgSerial` возвращает прежний outcome и не меняет revision;
 - тот же `msgSerial` с другим payload отклоняется;
+- precondition rejection возвращается как protocol outcome, а не store error;
 - duplicate attach не удваивает counters;
 - detach удаляет members attachment-а;
 - disconnect очищает все channels connection-а;
 - snapshot содержит только `Present`;
 - counters не уходят ниже нуля;
 - одна `presence_revision` создаёт один Presence event;
-- повторный guest shard flush не создаёт новую Presence revision;
+- memory commit возвращает canonical event, проходит через общий projector и
+  подтверждается только после успешной локальной обработки;
+- повторная запись aggregated occupancy shard не создаёт новую Presence
+  revision;
 - Redis state и outbox выполняются вместе либо не выполняются.
 - outbox leader failover сначала обрабатывает pending и сохраняет commit order.
+- store contract подключён к crate и реально проверяется `cargo check` и общим
+  contract test suite.
 
 ### Snapshot race
 
@@ -1103,6 +1277,8 @@ Redis failover.
 - outbound queue failure во время attach;
 - revision gap и Redis resync.
 - snapshot одного attachment не продвигает cursor других attachments.
+- buffered Occupancy с version не выше snapshot отбрасывается, а более новый
+  replay-ится после initial Occupancy.
 
 После `SYNC` клиент имеет authoritative set без пропусков и delta до snapshot.
 
@@ -1114,6 +1290,8 @@ Redis failover.
 - origin node получает event только через своего consumer-а;
 - restart consumer-а вызывает безопасную redelivery;
 - отсутствие локальных recipients успешно ACK-ается.
+- queue overflow одного recipient-а отключает только его и не вызывает
+  redelivery здоровым recipients.
 
 ### Lease и reaper
 
@@ -1131,24 +1309,32 @@ Redis failover.
 - `presenceMembers` может быть больше `presenceConnections`;
 - initial snapshot включает attachment самого подписчика;
 - category selector не содержит лишних полей;
-- любая включённая zero-boundary отправляется немедленно;
+- любая включённая zero-boundary отправляется сразу после соответствующего
+  cluster event;
 - прочие изменения coalesce и отправляются не позднее 15 секунд;
 - Objects category получает явную unsupported error.
 
-### Guest high churn
+### Aggregated Occupancy high churn
 
-- guest attachment виден в `connections` и `subscribers`, но не в
+- unidentified attachment виден в `connections` и `subscribers`, но не в
   `presenceMembers`;
-- guest получает `SYNC` и Presence deltas, но `ENTER`/`UPDATE`/`LEAVE` и
-  publish получают `NACK`;
+- unidentified attachment гостевого профиля получает `SYNC` и Presence deltas,
+  но `ENTER`/`UPDATE`/`LEAVE` и publish получают `NACK`;
 - 10 000 connect/disconnect transitions внутри flush window дают bounded
   Redis shard writes, а не 10 000 outbox entries;
 - stale/duplicate shard version не меняет counters;
-- общий переход `0 ↔ >0` публикуется немедленно;
-- обычный Occupancy update доставляется не реже одного раза в секунду при
-  изменении gauge;
-- падение ноды удаляет guest shard после lease expiry без тысяч отдельных
-  Presence `LEAVE`.
+- initial snapshot заменяет Redis contribution текущего shard локальным
+  абсолютным значением, учитывает само attachment и не удваивает уже flushed
+  count;
+- потерянный ответ успешного flush не приводит к двойному overlay;
+- общий переход `0 ↔ >0` создаёт cluster event в том же flush cycle, максимум
+  через секунду после local action;
+- при непрерывном изменении gauge shard flush и cluster publication выполняются
+  не чаще одного раза в секунду, а WebSocket non-zero updates coalesce не более
+  15 секунд;
+- concurrent flush во время publication сохраняет более новый dirty marker;
+- падение ноды удаляет aggregated occupancy shard после lease expiry без тысяч
+  отдельных Presence `LEAVE`.
 
 ### Token HTTP contract
 
@@ -1190,7 +1376,7 @@ Redis failover.
 - snapshot size/latency;
 - attach-barrier buffered deltas и resync;
 - Occupancy immediate/debounced emissions;
-- guest shard flush rate, stale versions и lease age;
+- aggregated occupancy shard flush rate, stale versions и lease age;
 - guest token issue/refresh rate, `429`, `503` и expiry jitter;
 - Occupancy fan-out rate, coalesced frames и dropped slow consumers.
 
@@ -1202,6 +1388,7 @@ Redis failover.
 - [Ably: Presence and Occupancy](https://ably.com/docs/presence-occupancy)
 - [Ably: Presence](https://ably.com/docs/presence-occupancy/presence)
 - [Ably: Occupancy](https://ably.com/docs/presence-occupancy/occupancy)
+- [Ably: Identified and unidentified clients](https://ably.com/docs/auth/identified-clients)
 - [Ably: Channel options and Occupancy params](https://ably.com/docs/channels/options)
 - [Ably: JWT authentication](https://ably.com/docs/auth/token/jwt)
 - [Ably: REST API Token Request specification](https://ably.com/docs/api/token-request-spec)
