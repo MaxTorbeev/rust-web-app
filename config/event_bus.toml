@@ -11,7 +11,7 @@ servers = ["nats://127.0.0.1:4222"]
 
 # Уникальный и стабильный идентификатор realtime-узла. Используется как имя
 # durable consumer-а и как область дедупликации событий этого узла.
-# Env: REALTIME_NODE_ID
+# Env: APP_NODE_ID
 node_id = "realtime-local-1"
 
 [nats.stream]

@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
 pub struct Timestamp(u64);
 
@@ -12,6 +12,10 @@ impl Timestamp {
       .unwrap()
       .as_millis() as u64;
 
+    Self(millis)
+  }
+
+  pub const fn from_millis(millis: u64) -> Self {
     Self(millis)
   }
 

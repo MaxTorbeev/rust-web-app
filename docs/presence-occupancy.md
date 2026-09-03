@@ -820,7 +820,7 @@ cleanup удаляет authoritative attachment.
 
 ## Leases, fencing и reaper
 
-`REALTIME_NODE_ID` стабилен для ноды. Каждый старт процесса создаёт случайный
+`APP_NODE_ID` стабилен для ноды. Каждый старт процесса создаёт случайный
 `boot_generation`. Owner любого attachment/member:
 
 ```text
@@ -1155,7 +1155,7 @@ PRESENCE_STORE_DRIVER=memory
 # clustered Presence
 EVENT_BUS_DRIVER=nats
 PRESENCE_STORE_DRIVER=redis
-REALTIME_NODE_ID=realtime-550e8400-e29b-41d4-a716-446655440000
+APP_NODE_ID=realtime-550e8400-e29b-41d4-a716-446655440000
 ```
 
 Допустимые production-профили:

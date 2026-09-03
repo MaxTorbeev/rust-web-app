@@ -36,7 +36,7 @@ Health endpoints не являются полным end-to-end тестом до
 | Readiness | Нода может безопасно принимать новые HTTP и WebSocket-соединения |
 | Release version | Человекочитаемая SemVer из `Cargo.toml` |
 | Release revision | Полный Git commit SHA, вшитый в binary при сборке |
-| Node ID | Стабильный `REALTIME_NODE_ID` конкретной realtime-ноды |
+| Node ID | Стабильный `APP_NODE_ID` конкретной realtime-ноды |
 | Deployment slot | Логическая группа `single`, `blue` или `green` |
 | Candidate slot | Неактивный slot, в который устанавливается новый release |
 | Active slot | Slot, на который load balancer направляет клиентский трафик |
@@ -219,17 +219,17 @@ build-args: |
 
 ### `node.id`
 
-Источник — `REALTIME_NODE_ID`.
+Источник — `APP_NODE_ID`.
 
 В production идентификатор создаётся `deploy/install-node-identity.sh` и
 хранится в отдельном `node.env`. Общий `.env` заменяется при deployment и не
-должен быть источником одинакового `REALTIME_NODE_ID` для нескольких серверов
+должен быть источником одинакового `APP_NODE_ID` для нескольких серверов
 или слотов.
 
-Для локального single-node окружения `REALTIME_NODE_ID` может находиться в
+Для локального single-node окружения `APP_NODE_ID` может находиться в
 локальном `.env`.
 
-Целевой health-контракт требует непустой и валидный `REALTIME_NODE_ID` во всех
+Целевой health-контракт требует непустой и валидный `APP_NODE_ID` во всех
 режимах EventBus. Отсутствующее или невалидное значение является ошибкой
 запуска. В локальном режиме допустимо явное значение `local`, если одновременно
 работает только один процесс.
@@ -573,10 +573,10 @@ candidate slot, но сам по себе не доказывает совмес
 Rollback использует предыдущий проверенный image SHA или image digest, а не
 mutable tag `production`.
 
-## `REALTIME_NODE_ID` при blue-green
+## `APP_NODE_ID` при blue-green
 
 Два одновременно работающих процесса приложения не могут использовать один
-`REALTIME_NODE_ID`. Идентификатор входит в имя durable consumer и область
+`APP_NODE_ID`. Идентификатор входит в имя durable consumer и область
 consumer-side дедупликации. Общий ID заставит процессы разделить один consumer,
 поэтому событие класса `AllNodes` может попасть только одному из них.
 
@@ -662,7 +662,7 @@ proxy Nginx опубликует новые маршруты наружу авт
 - readiness не становится `200` до startup barrier первого poll consumer;
 - terminal consumer error переводит runtime в `Failed`;
 - local runtime сообщает `Disabled`;
-- отсутствие `REALTIME_NODE_ID` завершает запуск с configuration error;
+- отсутствие `APP_NODE_ID` завершает запуск с configuration error;
 - отсутствие `DEPLOYMENT_SLOT` даёт `single`, неизвестное значение завершает
   запуск с configuration error;
 - production binary с revision `development` не запускается;
@@ -716,7 +716,7 @@ proxy Nginx опубликует новые маршруты наружу авт
 - `docker compose up --wait` ожидает readiness приложения;
 - load balancer использует `/health/ready`;
 - deployment controller сравнивает полный SHA каждой candidate-ноды;
-- blue и green ноды имеют разные `REALTIME_NODE_ID`;
+- blue и green ноды имеют разные `APP_NODE_ID`;
 - реализован lifecycle удаления retired durable consumer;
 - unit, integration и deployment gate tests проходят;
 - полный live smoke test выполнен хотя бы в staging.

@@ -66,7 +66,7 @@ fn map_nats(
 
   let app = require(app, "APP")?;
   let app_environment = require(app_environment, "APP_ENV")?;
-  let node_id = require(node_id, "REALTIME_NODE_ID")?;
+  let node_id = require(node_id, "APP_NODE_ID")?;
   let stream_name = require(stream_name, "NATS_STREAM_NAME")?;
 
   let max_age = Duration::from_secs(max_age_seconds);

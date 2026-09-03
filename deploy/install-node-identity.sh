@@ -43,8 +43,8 @@ validate_identity_file() {
 
   IFS= read -r identity_line < "$identity_file"
 
-  [[ "$identity_line" =~ ^REALTIME_NODE_ID=[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
-    || fail "$identity_file contains an invalid REALTIME_NODE_ID"
+  [[ "$identity_line" =~ ^APP_NODE_ID=[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+    || fail "$identity_file contains an invalid APP_NODE_ID"
 
   chmod 0600 "$identity_file"
 }
@@ -71,7 +71,7 @@ cleanup() {
 
 trap cleanup EXIT
 
-printf 'REALTIME_NODE_ID=%s\n' "$node_id" > "$temporary_file"
+printf 'APP_NODE_ID=%s\n' "$node_id" > "$temporary_file"
 chmod 0600 "$temporary_file"
 mv "$temporary_file" "$identity_file"
 

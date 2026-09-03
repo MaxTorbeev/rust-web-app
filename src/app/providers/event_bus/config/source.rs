@@ -33,7 +33,7 @@ pub(crate) struct NatsConfigSource {
   )]
   pub(crate) servers: Option<Vec<String>>,
 
-  #[config(env = "REALTIME_NODE_ID")]
+  #[config(env = "APP_NODE_ID")]
   pub(crate) node_id: Option<String>,
 
   #[config(nested)]

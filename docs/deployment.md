@@ -81,11 +81,11 @@ GitHub Actions выполняет deployment на один `DEPLOY_HOST`:
 3. Публикует image в GHCR.
 4. Загружает на сервер `compose.yml`, `.env`, frontend artifact и deployment
    scripts.
-5. При первом запуске создаёт стабильный `REALTIME_NODE_ID` в `node.env`.
+5. При первом запуске создаёт стабильный `APP_NODE_ID` в `node.env`.
 6. Выполняет `docker compose pull` и `docker compose up`.
 7. Атомарно переключает symlink `frontend/current` на новый frontend release.
 
-`REALTIME_NODE_ID` нельзя менять при обычном перезапуске или deployment одной и
+`APP_NODE_ID` нельзя менять при обычном перезапуске или deployment одной и
 той же realtime-ноды. Он используется как имя durable consumer и как область
 consumer-side дедупликации.
 
@@ -95,7 +95,7 @@ Single-host deployment пересоздаёт контейнер приложе�
 WebSocket-соединения. Клиенты должны переподключиться автоматически.
 
 На текущем этапе это принимаем как ограничение single-host режима. Запуск двух
-контейнеров приложения с одним и тем же `REALTIME_NODE_ID` для blue-green
+контейнеров приложения с одним и тем же `APP_NODE_ID` для blue-green
 deployment недопустим: оба процесса разделят один durable consumer, и события
 могут попасть только клиентам одного процесса.
 
