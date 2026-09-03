@@ -3,7 +3,7 @@ use support::timestamp::Timestamp;
 use crate::{ChannelKey, ChannelMode, OccupancySubscription};
 use crate::connection::ConnectionActor;
 
-/// Команда на запрос соединения.
+/// Запрос на начало работы с каналом в текущей WebSocket-сессии.
 #[derive(Debug, Clone)]
 pub struct AttachCommand {
   pub channel: ChannelKey,
@@ -23,7 +23,7 @@ pub struct AttachCommand {
   pub request_time_ms: u64,
 
   /// Effective (server calculated) modes and requested occupancy subscription.
-  pub requested_modes: Vec<ChannelMode>,
+  pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
 }
 

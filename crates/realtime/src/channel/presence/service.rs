@@ -1,7 +1,55 @@
 use std::sync::Arc;
-use crate::{PresenceCommitDelivery, PresenceStore};
+use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, PresenceError, PresenceStore};
+use crate::channel::attachment::{AttachCommand, DetachCommand};
+use crate::channel::presence::command::PresenceBatchCommand;
+use crate::connection::DisconnectConnectionCommand;
 
 pub struct PresenceService {
   store: Arc<dyn PresenceStore>,
   delivery: Arc<dyn PresenceCommitDelivery>,
+}
+
+impl PresenceService {
+
+  /// Запрос на начало работы с каналом в текущей WebSocket-сессии.
+  ///
+  /// ATTACH сообщает серверу: «в этой сессии клиент начинает работать с таким-то каналом».
+  /// Сервер сохраняет режимы, Presence/Occupancy-настройки
+  /// и начинает маршрутизировать события канала.
+  pub async fn attach(&self, command: AttachCommand) -> Result<PresenceAttachOutcome, PresenceError> {
+    let outcome = self.store.attach_and_snapshot(command).await?;
+
+    self
+      .delivery
+      .after_commit(&outcome.transition)
+      .await?;
+
+    Ok(outcome)
+  }
+
+  pub async fn apply(&self, command: PresenceBatchCommand) -> Result<CommittedTransition, PresenceError> {
+    let transition = self.store.apply_presence(command).await?;
+
+    self.delivery.after_commit(&transition).await?;
+
+    Ok(transition)
+  }
+
+  pub async fn detach(&self, command: DetachCommand) -> Result<CommittedTransition, PresenceError> {
+    let transition = self.store.detach(command).await?;
+
+    self.delivery.after_commit(&transition).await?;
+
+    Ok(transition)
+  }
+
+  pub async fn disconnect(&self, command: DisconnectConnectionCommand) -> Result<Vec<CommittedTransition>, PresenceError> {
+    let transitions = self.store.disconnect(command).await?;
+
+    for transition in &transitions {
+      self.delivery.after_commit(transition).await?;
+    }
+
+    Ok(transitions)
+  }
 }

@@ -17,7 +17,7 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
     )
     .await;
 
-  let presence = context.presence_hub.snapshot(channel).await;
+  let presence = context.presence.snapshot(channel).await;
 
   vec![
     // Отправить оповещение о том что клиент добавлен

@@ -4,13 +4,13 @@ use crate::channel::attachment::{AttachCommand, DetachCommand};
 use crate::channel::presence::snapshot::PresenceSnapshot;
 use crate::channel::presence::transition::CommittedTransition;
 use crate::connection::DisconnectConnectionCommand;
-use crate::{AggregatedOccupancyShard, ChannelKey, OccupancyShardFlushResult, PresenceAttachResult, PresenceStoreError};
+use crate::{AggregatedOccupancyShard, ChannelKey, OccupancyShardFlushResult, PresenceAttachOutcome, PresenceStoreError};
 use crate::channel::presence::command::PresenceBatchCommand;
 
 pub type PresenceStoreFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PresenceStoreError>> + Send + 'a>>;
 
 pub trait PresenceStore: Send + Sync {
-  fn attach_and_snapshot(&self, command: AttachCommand) -> PresenceStoreFuture<'_, PresenceAttachResult>;
+  fn attach_and_snapshot(&self, command: AttachCommand) -> PresenceStoreFuture<'_, PresenceAttachOutcome>;
 
   fn apply_presence(&self, command: PresenceBatchCommand) -> PresenceStoreFuture<'_, CommittedTransition>;
 

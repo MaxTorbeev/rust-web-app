@@ -7,7 +7,7 @@ pub async fn presence(message: ProtocolMessage, context: &SocketContext<'_>) -> 
       // TODO(security): WARNING: presence operations are not checked against token capability.
       // Require `presence` permission for this channel before mutating presence state.
       if !context
-        .router()
+        .router
         .is_attached(channel, &context.connection.id)
         .await
       {

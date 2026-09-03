@@ -7,8 +7,9 @@ mod snapshot;
 mod event;
 mod transition;
 mod delivery;
-mod result;
 mod service;
+mod outcome;
+mod error;
 
 pub use store::*;
 pub use actor::*;
@@ -18,5 +19,6 @@ pub use event::*;
 pub use transition::*;
 pub use delivery::*;
 pub use snapshot::*;
-pub use result::*;
 pub use service::*;
+pub use outcome::*;
+pub use error::*;
