@@ -1,6 +1,6 @@
 use serde_repr::{Deserialize_repr, Serialize_repr};
 
-#[derive(Serialize_repr, Deserialize_repr, Clone)]
+#[derive(Serialize_repr, Deserialize_repr, Clone, Debug)]
 #[repr(u8)]
 pub enum PresenceAction {
   Absent = 0,

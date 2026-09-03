@@ -1,10 +1,13 @@
 use uuid::Uuid;
-use crate::{ChannelKey, ChannelMode};
+use support::timestamp::Timestamp;
+use crate::{ChannelKey, ChannelMode, OccupancySubscription};
+use crate::connection::ConnectionActor;
 
+/// Команда на запрос соединения.
 #[derive(Debug, Clone)]
 pub struct AttachCommand {
   pub channel: ChannelKey,
-  pub actor: PresenceActor,
+  pub actor: ConnectionActor,
 
   /// Attach retry key: (application_id, connection_id, msg_serial),
   /// passed separately through protocol handler.
@@ -22,4 +25,13 @@ pub struct AttachCommand {
   /// Effective (server calculated) modes and requested occupancy subscription.
   pub requested_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DetachCommand {
+  pub channel: ChannelKey,
+  pub actor: ConnectionActor,
+  pub operation_id: Uuid,
+  pub normalized_request_hash: String,
+  pub request_time: Timestamp,
 }

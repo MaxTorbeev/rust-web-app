@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
 use std::fmt::Display;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct Timestamp(u64);
 
 impl Timestamp {

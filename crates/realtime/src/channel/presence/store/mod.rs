@@ -1,5 +1,5 @@
 mod contract;
-mod commands;
+mod error;
 
 pub use contract::*;
-pub use commands::*;
+pub use error::*;

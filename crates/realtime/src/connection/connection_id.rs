@@ -1,5 +1,7 @@
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(transparent)]
 pub struct ConnectionId(String);
 
 impl ConnectionId {

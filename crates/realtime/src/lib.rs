@@ -17,4 +17,3 @@ pub use connection::{Connection, ConnectionId};
 pub use events::*;
 pub use http::*;
 pub use realtime::*;
-pub use channel::presence::*;
