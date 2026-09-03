@@ -1,18 +1,4 @@
-use serde_repr::{Deserialize_repr, Serialize_repr};
-
-/// Presence action encoded in the realtime protocol.
-///
-/// `Absent` and `Present` describe snapshot state and are not valid mutation
-/// commands. Store mutations use [`PresenceMutationAction`] instead.
-#[derive(Clone, Copy, Debug, Deserialize_repr, Eq, PartialEq, Serialize_repr)]
-#[repr(u8)]
-pub enum PresenceAction {
-  Absent = 0,
-  Present = 1,
-  Enter = 2,
-  Leave = 3,
-  Update = 4,
-}
+use crate::PresenceAction;
 
 /// A client action that may mutate authoritative Presence state.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,5 +28,38 @@ impl From<PresenceMutationAction> for PresenceAction {
       PresenceMutationAction::Leave => Self::Leave,
       PresenceMutationAction::Update => Self::Update,
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn accepts_wire_mutation_actions() {
+    assert_eq!(
+      PresenceMutationAction::try_from(PresenceAction::Enter),
+      Ok(PresenceMutationAction::Enter),
+    );
+    assert_eq!(
+      PresenceMutationAction::try_from(PresenceAction::Update),
+      Ok(PresenceMutationAction::Update),
+    );
+    assert_eq!(
+      PresenceMutationAction::try_from(PresenceAction::Leave),
+      Ok(PresenceMutationAction::Leave),
+    );
+  }
+
+  #[test]
+  fn rejects_wire_state_actions() {
+    assert_eq!(
+      PresenceMutationAction::try_from(PresenceAction::Absent),
+      Err(PresenceAction::Absent),
+    );
+    assert_eq!(
+      PresenceMutationAction::try_from(PresenceAction::Present),
+      Err(PresenceAction::Present),
+    );
   }
 }

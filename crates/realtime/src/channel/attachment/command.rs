@@ -20,7 +20,7 @@ pub struct AttachCommand {
   pub normalized_request_hash: String,
 
   /// Server timestamp in ms.
-  pub request_time_ms: u64,
+  pub request_time_ms: Timestamp,
 
   /// Effective (server calculated) modes and requested occupancy subscription.
   pub effective_modes: Vec<ChannelMode>,

@@ -1,15 +1,14 @@
+use crate::{ChannelKey, PresenceActor, PresenceMutationAction};
 use serde_json::Value;
 use uuid::Uuid;
-use crate::{ChannelKey, ChannelMode, OccupancySubscription, PresenceAction, PresenceActor};
 
 #[derive(Debug, Clone)]
 pub struct PresenceBatchItem {
-  pub action: PresenceAction,
+  pub action: PresenceMutationAction,
   pub client_id: String,
   pub message_id: String,
   pub data: Option<Value>,
 }
-
 
 #[derive(Debug, Clone)]
 pub struct PresenceBatchCommand {
