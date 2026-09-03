@@ -32,7 +32,7 @@ pub(super) fn register(
       })?;
 
       application
-        .channel_hub
+        .router()
         .broadcast(
           &event.channel,
           ProtocolMessage::message(&event.channel, event.messages),

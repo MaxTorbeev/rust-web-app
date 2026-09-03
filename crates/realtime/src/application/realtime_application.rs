@@ -1,7 +1,4 @@
-use crate::{
-  ApplicationId, ApplicationSettings, ChannelHub, Connection, ConnectionId, PresenceHub,
-  ProtocolMessage,
-};
+use crate::{ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionId, PresenceService, ProtocolMessage};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 
@@ -9,9 +6,9 @@ pub struct RealtimeApplication {
   pub id: ApplicationId,
   pub(crate) token_issuer: TokenAccessIssuer,
   pub token_verifier: TokenAccessVerifier,
-  pub channel_hub: Arc<ChannelHub>,
-  pub presence_hub: Arc<PresenceHub>,
   pub settings: ApplicationSettings,
+  router: Arc<ChannelRouter>,
+  presence: PresenceService,
 }
 
 impl RealtimeApplication {
@@ -19,15 +16,25 @@ impl RealtimeApplication {
     id: ApplicationId,
     token_issuer: TokenAccessIssuer,
     token_verifier: TokenAccessVerifier,
+    router: Arc<ChannelRouter>,
+    presence: PresenceService,
   ) -> Self {
     Self {
       id,
       token_issuer,
       token_verifier,
       settings: ApplicationSettings::default(),
-      channel_hub: Arc::new(ChannelHub::new()),
-      presence_hub: Arc::new(PresenceHub::new()),
+      router: Arc::new(ChannelRouter::new()),
+      presence: Arc::new(PresenceHub::new()),
     }
+  }
+
+  pub fn router(&self) -> &ChannelRouter {
+    &self.router.as_ref()
+  }
+
+  pub fn presence(&self) -> &PresenceService {
+    &self.presence
   }
 
   pub fn create_connection(&self, authorization: VerifiedToken) -> Connection {
@@ -37,13 +44,13 @@ impl RealtimeApplication {
   /// Removes one connection from channel and presence state
   /// and broadcasts the resulting presence leave messages.
   pub async fn disconnect_connection(&self, connection_id: &ConnectionId) {
-    let leaves = self.presence_hub.disconnect(connection_id).await;
+    let leaves = self.presence().disconnect(connection_id).await;
 
-    self.channel_hub.disconnect(connection_id).await;
+    self.router().disconnect(connection_id).await;
 
     for (channel, presence) in leaves {
       if let Err(error) = self
-        .channel_hub
+        .router()
         .broadcast(
           &channel,
           ProtocolMessage::presence(&channel, vec![presence]),

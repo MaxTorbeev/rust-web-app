@@ -9,7 +9,7 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
   // TODO(security): WARNING: channel access is not checked against token capability.
   // Authorize the requested channel before attaching the connection.
   context
-    .channel_hub
+    .router
     .attach(
       channel,
       context.connection.id.clone(),

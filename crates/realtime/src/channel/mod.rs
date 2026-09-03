@@ -5,11 +5,10 @@ mod mode;
 mod attachment;
 mod occupancy;
 mod presence;
+mod delivery;
 
-// pub use broadcast::*;
-// pub use channel_hub::*;
-// pub use presence_hub::*;
 pub use key::*;
 pub use mode::*;
 pub use occupancy::*;
 pub use presence::*;
+pub use delivery::*;
