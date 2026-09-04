@@ -1,11 +1,11 @@
-mod metric;
 mod category;
-mod subscription;
 mod change;
+mod metric;
 mod shard;
+mod subscription;
 
-pub use metric::*;
 pub use category::*;
-pub use subscription::*;
 pub use change::*;
+pub use metric::*;
 pub use shard::*;
+pub use subscription::*;

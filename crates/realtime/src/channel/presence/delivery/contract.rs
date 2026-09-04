@@ -1,10 +1,10 @@
 use crate::{CommittedTransition, PresenceDeliveryError};
 use std::{future::Future, pin::Pin};
 
-pub type PresenceDeliveryFuture<'a> = Pin<Box<dyn Future<Output = Result<(), PresenceDeliveryError>> + Send + 'a>>;
+pub type PresenceDeliveryFuture<'a> =
+  Pin<Box<dyn Future<Output = Result<(), PresenceDeliveryError>> + Send + 'a>>;
 
 pub trait PresenceCommitDelivery: Send + Sync {
-
   /// Обрабатывает переход, возвращённый после успешной фиксации операции
   /// в [`PresenceStore`].
   ///

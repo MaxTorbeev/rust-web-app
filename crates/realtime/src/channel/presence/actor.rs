@@ -1,5 +1,5 @@
-use crate::connection::ConnectionActor;
 use crate::PresenceClientIdPolicy;
+use crate::connection::ConnectionActor;
 
 /// Актор, выполняющий presence операция и его полномочия
 #[derive(Debug, Clone)]

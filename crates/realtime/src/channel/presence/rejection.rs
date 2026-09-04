@@ -4,9 +4,7 @@ use serde::{Deserialize, Serialize};
 pub enum PresenceRejection {
   NotAttached,
   UnidentifiedConnection,
-  ClientIdNotAllowed {
-    client_id: String,
-  },
+  ClientIdNotAllowed { client_id: String },
   InvalidMemberState,
   ConflictingReplay,
 }

@@ -1,7 +1,7 @@
-pub(crate) mod router;
 mod error;
 mod outcome;
+pub(crate) mod router;
 
-pub use router::*;
 pub use error::*;
 pub use outcome::*;
+pub use router::*;

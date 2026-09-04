@@ -1,7 +1,7 @@
+use crate::channel::delivery::{BroadcastError, BroadcastOutcome};
+use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
-use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage};
-use crate::channel::delivery::{BroadcastError, BroadcastOutcome};
 
 /// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
 /// can enqueue ProtocolMessage values without owning the WebSocket itself.
@@ -147,11 +147,7 @@ impl ChannelRouter {
       .is_some_and(|connections| connections.contains_key(connection_id))
   }
 
-  fn detach_locked(
-    state: &mut ChannelState,
-    channel: &str,
-    connection_id: &ConnectionId,
-  ) -> bool {
+  fn detach_locked(state: &mut ChannelState, channel: &str, connection_id: &ConnectionId) -> bool {
     let mut should_remove_channel = false;
 
     let removed = if let Some(connections) = state.channels.get_mut(channel) {

@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use crate::{CommittedTransition, OccupancyShardBaseline, PresenceRejection, PresenceSnapshot};
 use crate::channel::attachment::Attachment;
+use crate::{CommittedTransition, OccupancyShardBaseline, PresenceRejection, PresenceSnapshot};
+use serde::{Deserialize, Serialize};
 
 /// Результат подготовки ATTACH в хранилище.
 ///
@@ -26,7 +26,7 @@ pub struct PresenceAttachOutcome {
   /// в `snapshot.occupancy`.
   ///
   /// `None`, если подключение учитывается индивидуально.
-  pub occupancy_shard_baseline: Option<OccupancyShardBaseline>
+  pub occupancy_shard_baseline: Option<OccupancyShardBaseline>,
 }
 
 /// Итог обработки команды изменения Presence.

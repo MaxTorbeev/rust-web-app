@@ -1,7 +1,7 @@
-use uuid::Uuid;
-use support::timestamp::Timestamp;
-use crate::{ChannelKey, ChannelMode, OccupancySubscription};
 use crate::connection::ConnectionActor;
+use crate::{ChannelKey, ChannelMode, OccupancySubscription};
+use support::timestamp::Timestamp;
+use uuid::Uuid;
 
 /// Запрос на начало работы с каналом в текущей WebSocket-сессии.
 #[derive(Debug, Clone)]

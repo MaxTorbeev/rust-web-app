@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::CommittedPresenceEvent;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedTransition {

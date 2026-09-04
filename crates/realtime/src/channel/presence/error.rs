@@ -1,5 +1,5 @@
-use thiserror::Error;
 use crate::{PresenceDeliveryError, PresenceStoreError};
+use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum PresenceError {

@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use crate::channel::attachment::{AttachCommand, AttachmentError, DetachCommand};
+use crate::channel::attachment::{AttachCommand, AttachmentError, AttachmentStore, DetachCommand};
 use crate::connection::DisconnectConnectionCommand;
-use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, PresenceStore};
+use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery};
 
 /// Управляет жизненным циклом соединения с каналами.
 ///
@@ -12,12 +12,12 @@ use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, 
 /// Локальная регистрация соединения в [`crate::ChannelRouter`] выполняется
 /// уровнем приложения или транспорта и не входит в ответственность сервиса.
 pub struct AttachmentService {
-  store: Arc<dyn PresenceStore>,
+  store: Arc<dyn AttachmentStore>,
   delivery: Arc<dyn PresenceCommitDelivery>,
 }
 
 impl AttachmentService {
-  pub fn new(store: Arc<dyn PresenceStore>, delivery: Arc<dyn PresenceCommitDelivery>) -> Self {
+  pub fn new(store: Arc<dyn AttachmentStore>, delivery: Arc<dyn PresenceCommitDelivery>) -> Self {
     Self { store, delivery }
   }
 

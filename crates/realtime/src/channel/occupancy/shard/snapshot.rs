@@ -1,5 +1,5 @@
-use support::NodeInstance;
 use crate::ChannelKey;
+use support::NodeInstance;
 
 /// Absolute per-owner contribution for attachments represented only in
 /// aggregated Occupancy state.

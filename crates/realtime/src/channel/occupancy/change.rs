@@ -1,6 +1,6 @@
-use std::collections::BTreeSet;
-use serde::{Deserialize, Serialize};
 use crate::{OccupancyCategory, OccupancyMetrics};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct OccupancyChange {

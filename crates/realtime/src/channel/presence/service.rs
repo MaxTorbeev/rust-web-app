@@ -1,8 +1,6 @@
-use std::sync::Arc;
-use crate::{CommittedTransition, PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
-use crate::channel::attachment::{DetachCommand};
 use crate::channel::presence::command::PresenceBatchCommand;
-use crate::connection::DisconnectConnectionCommand;
+use crate::{PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
+use std::sync::Arc;
 
 pub struct PresenceService {
   store: Arc<dyn PresenceStore>,
@@ -10,15 +8,14 @@ pub struct PresenceService {
 }
 
 impl PresenceService {
-
-  pub fn new(
-    store: Arc<dyn PresenceStore>,
-    delivery: Arc<dyn PresenceCommitDelivery>,
-  ) -> Self {
+  pub fn new(store: Arc<dyn PresenceStore>, delivery: Arc<dyn PresenceCommitDelivery>) -> Self {
     Self { store, delivery }
   }
 
-  pub async fn apply(&self, command: PresenceBatchCommand) -> Result<PresenceMutationOutcome, PresenceError> {
+  pub async fn apply(
+    &self,
+    command: PresenceBatchCommand,
+  ) -> Result<PresenceMutationOutcome, PresenceError> {
     let receipt = self.store.apply_presence(command).await?;
 
     if let PresenceMutationOutcome::Committed(transition) = &receipt.outcome {
@@ -26,23 +23,5 @@ impl PresenceService {
     }
 
     Ok(receipt.outcome)
-  }
-
-  pub async fn detach(&self, command: DetachCommand) -> Result<CommittedTransition, PresenceError> {
-    let transition = self.store.detach(command).await?;
-
-    self.delivery.after_commit(&transition).await?;
-
-    Ok(transition)
-  }
-
-  pub async fn disconnect(&self, command: DisconnectConnectionCommand) -> Result<Vec<CommittedTransition>, PresenceError> {
-    let transitions = self.store.disconnect(command).await?;
-
-    for transition in &transitions {
-      self.delivery.after_commit(transition).await?;
-    }
-
-    Ok(transitions)
   }
 }

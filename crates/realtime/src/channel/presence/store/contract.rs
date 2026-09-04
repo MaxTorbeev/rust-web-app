@@ -1,22 +1,20 @@
 use std::{future::Future, pin::Pin};
 
-use crate::channel::attachment::{AttachCommand, DetachCommand};
-use crate::channel::presence::snapshot::PresenceSnapshot;
-use crate::channel::presence::transition::CommittedTransition;
-use crate::connection::DisconnectConnectionCommand;
-use crate::{ChannelKey, OccupancyShardFlushResult, OccupancyShardSnapshot, PresenceAttachOutcome, PresenceMutationReceipt, PresenceStoreError};
 use crate::channel::presence::command::PresenceBatchCommand;
+use crate::channel::presence::snapshot::PresenceSnapshot;
+use crate::{
+  ChannelKey, OccupancyShardFlushResult, OccupancyShardSnapshot, PresenceMutationReceipt,
+  PresenceStoreError,
+};
 
-pub type PresenceStoreFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, PresenceStoreError>> + Send + 'a>>;
+pub type PresenceStoreFuture<'a, T> =
+  Pin<Box<dyn Future<Output = Result<T, PresenceStoreError>> + Send + 'a>>;
 
 pub trait PresenceStore: Send + Sync {
-  fn attach_and_snapshot(&self, command: AttachCommand) -> PresenceStoreFuture<'_, PresenceAttachOutcome>;
-
-  fn apply_presence(&self, command: PresenceBatchCommand) -> PresenceStoreFuture<'_, PresenceMutationReceipt>;
-
-  fn detach(&self, command: DetachCommand) -> PresenceStoreFuture<'_, CommittedTransition>;
-
-  fn disconnect(&self, command: DisconnectConnectionCommand) -> PresenceStoreFuture<'_, Vec<CommittedTransition>>;
+  fn apply_presence(
+    &self,
+    command: PresenceBatchCommand,
+  ) -> PresenceStoreFuture<'_, PresenceMutationReceipt>;
 
   fn snapshot(&self, channel: ChannelKey) -> PresenceStoreFuture<'_, PresenceSnapshot>;
 
@@ -37,5 +35,8 @@ pub trait PresenceStore: Send + Sync {
   ///
   /// Возвращает [`PresenceStoreError`], если снимок не может быть проверен
   /// или сохранён.
-  fn flush_occupancy_shard(&self, shard: OccupancyShardSnapshot) -> PresenceStoreFuture<'_, OccupancyShardFlushResult>;
+  fn flush_occupancy_shard(
+    &self,
+    shard: OccupancyShardSnapshot,
+  ) -> PresenceStoreFuture<'_, OccupancyShardFlushResult>;
 }

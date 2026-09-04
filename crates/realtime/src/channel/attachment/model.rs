@@ -1,5 +1,5 @@
-use support::NodeInstance;
 use crate::{ChannelMode, ConnectionId, OccupancySubscription};
+use support::NodeInstance;
 
 /// Состояние работы WebSocket-сессии с одним каналом.
 #[derive(Debug, Clone)]

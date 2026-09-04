@@ -1,6 +1,6 @@
-use support::NodeInstance;
 use crate::ConnectionId;
 use serde_json::Value;
+use support::NodeInstance;
 
 #[derive(Debug, Clone)]
 pub struct PresenceMember {
