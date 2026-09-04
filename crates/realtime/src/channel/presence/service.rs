@@ -1,14 +1,14 @@
 use crate::channel::presence::command::PresenceBatchCommand;
-use crate::{PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
+use crate::{ChannelCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
 use std::sync::Arc;
 
 pub struct PresenceService {
   store: Arc<dyn PresenceStore>,
-  delivery: Arc<dyn PresenceCommitDelivery>,
+  delivery: Arc<dyn ChannelCommitDelivery>,
 }
 
 impl PresenceService {
-  pub fn new(store: Arc<dyn PresenceStore>, delivery: Arc<dyn PresenceCommitDelivery>) -> Self {
+  pub fn new(store: Arc<dyn PresenceStore>, delivery: Arc<dyn ChannelCommitDelivery>) -> Self {
     Self { store, delivery }
   }
 

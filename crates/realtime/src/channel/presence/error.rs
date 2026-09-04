@@ -1,4 +1,4 @@
-use crate::{PresenceDeliveryError, PresenceStoreError};
+use crate::{ChannelCommitDeliveryError, PresenceStoreError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -7,5 +7,5 @@ pub enum PresenceError {
   Store(#[from] PresenceStoreError),
 
   #[error("presence delivery failed: {0}")]
-  Delivery(#[from] PresenceDeliveryError),
+  Delivery(#[from] ChannelCommitDeliveryError),
 }

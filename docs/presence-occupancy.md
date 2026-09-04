@@ -185,12 +185,12 @@ Occupancy events      ≈ dirty_channels / 1s
 WebSocket action
       |
       v
-PresenceService
+AttachmentService / PresenceService
       |
       v
-PresenceStore + PresenceCommitDelivery
+AttachmentStore / PresenceStore + ChannelCommitDelivery
       |
-      +-- memory commit --> LocalPresenceCommitDelivery
+      +-- memory commit --> LocalChannelCommitDelivery
       |                         |
       |                         v
       |                 local channel projector
@@ -231,13 +231,14 @@ local AggregatedOccupancyShard --(<= 1s absolute flush)--> Redis Lua
 JetStream переносит уже зафиксированные canonical changes. Он не является
 источником snapshot и не восстанавливает потерянный Redis state.
 
-`PresenceService` всегда вызывает один и тот же `PresenceStore`, а затем
-внедрённый `PresenceCommitDelivery`. В memory mode store возвращает canonical
-event, local delivery синхронно применяет его через тот же projector, и ответ
-клиенту ставится в очередь только после успешной локальной обработки. В Redis
-mode store возвращает receipt уже durable outbox record, а delivery не выполняет
-отдельный publish: fan-out начинает `PresenceOutboxPublisher`. Конкретная пара
-реализаций выбирается один раз в composition root.
+`AttachmentService` и `PresenceService` вызывают соответствующий контракт
+хранилища, а затем общий `ChannelCommitDelivery`. В memory mode хранилище
+возвращает canonical event, local delivery синхронно применяет его через тот же
+projector, и ответ клиенту ставится в очередь только после успешной локальной
+обработки. В Redis mode хранилище возвращает receipt уже durable outbox record,
+а delivery не выполняет отдельный publish: fan-out начинает
+`PresenceOutboxPublisher`. Конкретная пара реализаций выбирается один раз в
+composition root.
 
 На каждой ноде работают supervised runtimes:
 
@@ -390,16 +391,16 @@ trait PresenceStore {
     ) -> Result<OccupancyShardFlushResult, PresenceStoreError>;
 }
 
-trait PresenceCommitDelivery {
+trait ChannelCommitDelivery {
     async fn after_commit(
         &self,
         transition: &CommittedTransition,
-    ) -> Result<(), PresenceDeliveryError>;
+    ) -> Result<(), ChannelCommitDeliveryError>;
 }
 ```
 
-`LocalPresenceCommitDelivery` требует canonical event в committed transition и
-синхронно передаёт его в local projector. `RedisOutboxPresenceCommitDelivery`
+`LocalChannelCommitDelivery` требует canonical event в committed transition и
+синхронно передаёт его в local projector. `RedisOutboxChannelCommitDelivery`
 принимает receipt атомарного store commit, который по контракту уже означает
 запись event в outbox, и не публикует его отдельно. Ошибка local delivery не
 превращает committed mutation в новую: retry получает прежний outcome и повторяет
