@@ -219,7 +219,7 @@ actor:
 unidentified ATTACH/DETACH
         |
         v
-local AggregatedOccupancyShard --(<= 1s absolute flush)--> Redis Lua
+local OccupancyShardState --(<= 1s absolute flush)--> Redis Lua
         |                                                |
         `-- local Presence SYNC/deltas                 v
                                                   Occupancy publisher
@@ -310,14 +310,13 @@ struct Attachment {
     occupancy: Option<OccupancySubscription>,
 }
 
-struct AggregatedOccupancyShard {
-    owner: PresenceOwner,
+struct OccupancyShardSnapshot {
+    node_instance: NodeInstance,
     channel: ChannelKey,
     version: u64,
     connections: u64,
     subscribers: u64,
     presence_subscribers: u64,
-    lease_deadline_ms: u64,
 }
 
 struct PresenceSnapshot {
@@ -354,21 +353,16 @@ struct OccupancyShardFlushResult {
 `PresenceAction::Present` используется только в `SYNC`. Canonical deltas имеют
 действия `Enter`, `Update` или `Leave`.
 
-## `PresenceStore`
+## Хранилища состояния канала
 
 Целевой контракт:
 
 ```rust
-trait PresenceStore {
+trait AttachmentStore {
     async fn attach_and_snapshot(
         &self,
         command: AttachCommand,
-    ) -> Result<AttachResult, ChannelStateStoreError>;
-
-    async fn apply_presence(
-        &self,
-        command: PresenceBatchCommand,
-    ) -> Result<PresenceMutationOutcome, ChannelStateStoreError>;
+    ) -> Result<PresenceAttachOutcome, ChannelStateStoreError>;
 
     async fn detach(
         &self,
@@ -377,17 +371,26 @@ trait PresenceStore {
 
     async fn disconnect(
         &self,
-        command: DisconnectCommand,
+        command: DisconnectConnectionCommand,
     ) -> Result<Vec<CommittedTransition>, ChannelStateStoreError>;
+}
+
+trait PresenceStore {
+    async fn apply_presence(
+        &self,
+        command: PresenceBatchCommand,
+    ) -> Result<PresenceMutationReceipt, ChannelStateStoreError>;
 
     async fn snapshot(
         &self,
         channel: ChannelKey,
     ) -> Result<PresenceSnapshot, ChannelStateStoreError>;
+}
 
-    async fn flush_occupancy_shard(
+trait OccupancyShardStore {
+    async fn flush(
         &self,
-        shard: AggregatedOccupancyShard,
+        snapshot: OccupancyShardSnapshot,
     ) -> Result<OccupancyShardFlushResult, ChannelStateStoreError>;
 }
 
@@ -524,7 +527,7 @@ encoding. Необработанные имена channel не использу�
 9. сохраняет operation outcome;
 10. возвращает committed event, versions и snapshot, если это attach.
 
-Отдельный `flush_occupancy_shard` Lua transition атомарно:
+Отдельный Lua transition записи Occupancy shard атомарно:
 
 1. проверяет lease и точную `boot_generation` shard-а;
 2. отклоняет version, которая не новее сохранённой;
