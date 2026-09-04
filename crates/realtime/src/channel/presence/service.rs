@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
-use crate::channel::attachment::{AttachCommand, DetachCommand};
+use crate::{CommittedTransition, PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
+use crate::channel::attachment::{DetachCommand};
 use crate::channel::presence::command::PresenceBatchCommand;
 use crate::connection::DisconnectConnectionCommand;
 
@@ -16,23 +16,6 @@ impl PresenceService {
     delivery: Arc<dyn PresenceCommitDelivery>,
   ) -> Self {
     Self { store, delivery }
-  }
-
-
-  /// Запрос на начало работы с каналом в текущей WebSocket-сессии.
-  ///
-  /// ATTACH сообщает серверу: «в этой сессии клиент начинает работать с таким-то каналом».
-  /// Сервер сохраняет режимы, Presence/Occupancy-настройки
-  /// и начинает маршрутизировать события канала.
-  pub async fn attach(&self, command: AttachCommand) -> Result<PresenceAttachOutcome, PresenceError> {
-    let outcome = self.store.attach_and_snapshot(command).await?;
-
-    self
-      .delivery
-      .after_commit(&outcome.transition)
-      .await?;
-
-    Ok(outcome)
   }
 
   pub async fn apply(&self, command: PresenceBatchCommand) -> Result<PresenceMutationOutcome, PresenceError> {
