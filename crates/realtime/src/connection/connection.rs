@@ -1,10 +1,12 @@
+use crate::connection::ConnectionActor;
 use crate::{ApplicationId, ApplicationSettings, ConnectionId, RealtimeApplication};
 use auth::VerifiedToken;
-use support::timestamp::Timestamp;
+use support::{NodeInstance, timestamp::Timestamp};
 
 pub struct Connection {
   pub id: ConnectionId,
   application_id: ApplicationId,
+  node_instance: NodeInstance,
   connection_key: String,
   pub authorization: VerifiedToken,
   pub connected_at: Timestamp,
@@ -16,6 +18,7 @@ impl Connection {
     Self {
       id: ConnectionId::generate(),
       application_id: application.id.clone(),
+      node_instance: application.node_instance().clone(),
       connection_key: uuid::Uuid::new_v4().to_string(),
       authorization,
       connected_at: Timestamp::now(),
@@ -26,6 +29,18 @@ impl Connection {
   pub fn application_id(&self) -> &ApplicationId {
     &self.application_id
   }
+
+  pub fn node_instance(&self) -> &NodeInstance {
+    &self.node_instance
+  }
+
+  pub fn actor(&self) -> ConnectionActor {
+    ConnectionActor {
+      connection_id: self.id.clone(),
+      node_instance: self.node_instance.clone(),
+    }
+  }
+
   pub fn connection_key(&self) -> &str {
     &self.connection_key
   }
@@ -48,10 +63,20 @@ mod tests {
   use super::*;
   use crate::{ConnectionDetails, ProtocolMessage};
   use auth::{TokenAccessIssuer, TokenAccessVerifier};
+  use support::{BootGeneration, NodeId};
+
+  fn test_node_instance() -> NodeInstance {
+    NodeInstance::new(
+      NodeId::try_new("test-node").expect("test node id must be valid"),
+      BootGeneration::generate(),
+      Timestamp::from_millis(1_700_000_000_000),
+    )
+  }
 
   fn test_application(id: &str, settings: ApplicationSettings) -> RealtimeApplication {
     let mut application = RealtimeApplication::new(
       ApplicationId::new(id),
+      test_node_instance(),
       TokenAccessIssuer::new("test-key", b"test-secret"),
       TokenAccessVerifier::new("test-key", b"test-secret"),
     );
@@ -103,6 +128,17 @@ mod tests {
     let connection = application.create_connection(test_authorization());
 
     assert_eq!(connection.application_id(), &application.id);
+  }
+
+  #[test]
+  fn connection_keeps_the_creating_node_instance() {
+    let application = test_application("application-1", ApplicationSettings::default());
+    let expected = application.node_instance().clone();
+
+    let connection = application.create_connection(test_authorization());
+
+    assert_eq!(connection.node_instance(), &expected);
+    assert_eq!(connection.actor().node_instance, expected);
   }
 
   #[test]

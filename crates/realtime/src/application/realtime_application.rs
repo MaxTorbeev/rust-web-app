@@ -1,9 +1,14 @@
-use crate::{ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionId, PresenceService, ProtocolMessage};
+use crate::{
+  ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionId, PresenceService,
+  ProtocolMessage,
+};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
+use support::NodeInstance;
 
 pub struct RealtimeApplication {
   pub id: ApplicationId,
+  node_instance: NodeInstance,
   pub(crate) token_issuer: TokenAccessIssuer,
   pub token_verifier: TokenAccessVerifier,
   pub settings: ApplicationSettings,
@@ -14,6 +19,7 @@ pub struct RealtimeApplication {
 impl RealtimeApplication {
   pub fn new(
     id: ApplicationId,
+    node_instance: NodeInstance,
     token_issuer: TokenAccessIssuer,
     token_verifier: TokenAccessVerifier,
     router: Arc<ChannelRouter>,
@@ -21,6 +27,7 @@ impl RealtimeApplication {
   ) -> Self {
     Self {
       id,
+      node_instance,
       token_issuer,
       token_verifier,
       settings: ApplicationSettings::default(),
@@ -35,6 +42,10 @@ impl RealtimeApplication {
 
   pub fn presence(&self) -> &PresenceService {
     &self.presence
+  }
+
+  pub fn node_instance(&self) -> &NodeInstance {
+    &self.node_instance
   }
 
   pub fn create_connection(&self, authorization: VerifiedToken) -> Connection {

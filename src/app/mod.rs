@@ -5,6 +5,7 @@ use crate::app::providers::EventBusProvider;
 use auth::AuthConfig;
 use realtime::{Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
+use support::{BootGeneration, NodeId, NodeInstance, app::read_env, timestamp::Timestamp};
 
 mod config;
 mod health;
@@ -16,6 +17,11 @@ mod version;
 
 pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   let app_version = version::AppVersion::CURRENT;
+  let node_instance = NodeInstance::new(
+    NodeId::try_new(read_env("APP_NODE_ID")?)?,
+    BootGeneration::generate(),
+    Timestamp::now(),
+  );
 
   let redis_config = RedisConfig::from_env()?;
   let redis = Arc::new(RedisClient::connect(&redis_config).await?);
@@ -30,9 +36,13 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
 
   let auth = Arc::new(AuthConfig::from_env()?);
 
-  let realtime = Arc::new(Realtime::from_config(RealtimeConfig::from_env()?));
+  let realtime = Arc::new(Realtime::from_config(
+    RealtimeConfig::from_env()?,
+    node_instance,
+  ));
 
-  let event_bus_runtime = EventBusProvider::build(Arc::clone(&redis), Arc::clone(&realtime)).await?;
+  let event_bus_runtime =
+    EventBusProvider::build(Arc::clone(&redis), Arc::clone(&realtime)).await?;
 
   let event_bus = event_bus_runtime.event_bus();
   let event_bus_health = event_bus_runtime.health_check();

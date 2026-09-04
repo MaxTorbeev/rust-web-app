@@ -51,6 +51,7 @@ mod tests {
   use crate::transport::shutdown_channel;
   use crate::{ApplicationId, ApplicationSettings};
   use auth::{TokenAccessIssuer, TokenAccessVerifier};
+  use support::{BootGeneration, NodeId, NodeInstance, timestamp::Timestamp};
   use tokio::sync::mpsc;
   use tokio::time::timeout;
 
@@ -58,6 +59,11 @@ mod tests {
   async fn sends_heartbeat_within_max_idle_interval() {
     let mut application = RealtimeApplication::new(
       ApplicationId::new("application-1"),
+      NodeInstance::new(
+        NodeId::try_new("test-node").expect("test node id must be valid"),
+        BootGeneration::generate(),
+        Timestamp::from_millis(1_700_000_000_000),
+      ),
       TokenAccessIssuer::new("test-key", b"test-secret"),
       TokenAccessVerifier::new("test-key", b"test-secret"),
     );

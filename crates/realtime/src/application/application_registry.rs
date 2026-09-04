@@ -2,6 +2,7 @@ use crate::{ApplicationId, RealtimeApplication, RealtimeConfig};
 use auth::{TokenAccessIssuer, TokenAccessVerifier};
 use std::collections::HashMap;
 use std::sync::Arc;
+use support::NodeInstance;
 
 pub struct ApplicationRegistry {
   applications: HashMap<ApplicationId, Arc<RealtimeApplication>>,
@@ -14,7 +15,7 @@ impl ApplicationRegistry {
     }
   }
 
-  pub fn from_config(config: RealtimeConfig) -> Self {
+  pub fn from_config(config: RealtimeConfig, node_instance: NodeInstance) -> Self {
     let RealtimeConfig {
       application_id,
       key_name,
@@ -25,7 +26,8 @@ impl ApplicationRegistry {
 
     let token_issuer = TokenAccessIssuer::new(key_name.clone(), key_secret.as_bytes());
 
-    let application = RealtimeApplication::new(application_id, token_issuer, token_verified);
+    let application =
+      RealtimeApplication::new(application_id, node_instance, token_issuer, token_verified);
 
     let mut registry = Self::new();
 

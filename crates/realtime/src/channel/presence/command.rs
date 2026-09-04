@@ -1,6 +1,6 @@
 use crate::{ChannelKey, PresenceActor, PresenceMutationAction};
 use serde_json::Value;
-use uuid::Uuid;
+use support::timestamp::Timestamp;
 
 #[derive(Debug, Clone)]
 pub struct PresenceBatchItem {
@@ -10,17 +10,16 @@ pub struct PresenceBatchItem {
   pub data: Option<Value>,
 }
 
+/// Атомарная команда изменения Presence одного канала.
 #[derive(Debug, Clone)]
 pub struct PresenceBatchCommand {
   pub channel: ChannelKey,
   pub actor: PresenceActor,
   pub items: Vec<PresenceBatchItem>,
-  /// Retry key for protocol-level deduplication.
-  pub msg_serial: Option<u64>,
-  /// Stable operation identifier for idempotent storage outcome.
-  pub operation_id: Uuid,
-  /// Deterministic normalized payload hash for replay comparison.
+  /// Последовательный номер клиентской операции.
+  pub msg_serial: u64,
+  /// Хеш нормализованного содержимого запроса.
   pub normalized_request_hash: String,
-  /// Server timestamp in ms.
-  pub request_time_ms: u64,
+  /// Время получения запроса сервером.
+  pub request_time: Timestamp,
 }

@@ -5,6 +5,7 @@ use auth::{
   TokenAccessVerifier, TokenCapability, TokenIssueError, TokenVerifyError, VerifiedToken,
 };
 use std::sync::Arc;
+use support::NodeInstance;
 
 pub struct Realtime {
   applications: ApplicationRegistry,
@@ -35,9 +36,9 @@ impl From<TokenIssueError> for RealtimeAuthError {
 }
 
 impl Realtime {
-  pub fn from_config(config: RealtimeConfig) -> Self {
+  pub fn from_config(config: RealtimeConfig, node_instance: NodeInstance) -> Self {
     Self {
-      applications: ApplicationRegistry::from_config(config),
+      applications: ApplicationRegistry::from_config(config, node_instance),
     }
   }
 

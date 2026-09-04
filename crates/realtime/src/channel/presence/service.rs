@@ -1,5 +1,5 @@
 use std::sync::Arc;
-use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, PresenceError, PresenceStore};
+use crate::{CommittedTransition, PresenceAttachOutcome, PresenceCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
 use crate::channel::attachment::{AttachCommand, DetachCommand};
 use crate::channel::presence::command::PresenceBatchCommand;
 use crate::connection::DisconnectConnectionCommand;
@@ -27,12 +27,14 @@ impl PresenceService {
     Ok(outcome)
   }
 
-  pub async fn apply(&self, command: PresenceBatchCommand) -> Result<CommittedTransition, PresenceError> {
-    let transition = self.store.apply_presence(command).await?;
+  pub async fn apply(&self, command: PresenceBatchCommand) -> Result<PresenceMutationOutcome, PresenceError> {
+    let receipt = self.store.apply_presence(command).await?;
 
-    self.delivery.after_commit(&transition).await?;
+    if let PresenceMutationOutcome::Committed(transition) = &receipt.outcome {
+      self.delivery.after_commit(transition).await?;
+    }
 
-    Ok(transition)
+    Ok(receipt.outcome)
   }
 
   pub async fn detach(&self, command: DetachCommand) -> Result<CommittedTransition, PresenceError> {

@@ -10,6 +10,8 @@ mod delivery;
 mod service;
 mod outcome;
 mod error;
+mod client_id_policy;
+mod rejection;
 
 pub use store::*;
 pub use actor::*;
@@ -22,3 +24,5 @@ pub use snapshot::*;
 pub use service::*;
 pub use outcome::*;
 pub use error::*;
+pub use client_id_policy::*;
+pub use rejection::*;

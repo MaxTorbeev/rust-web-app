@@ -19,6 +19,7 @@ use realtime::{
   register_event_handlers,
 };
 use serde_json::{Value, json};
+use support::{BootGeneration, NodeId, NodeInstance, timestamp::Timestamp};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 use tokio::task::JoinHandle;
@@ -384,12 +385,23 @@ fn test_application_id() -> ApplicationId {
   ApplicationId::new("application-1")
 }
 
+fn test_node_instance() -> NodeInstance {
+  NodeInstance::new(
+    NodeId::try_new("test-node").expect("test node id must be valid"),
+    BootGeneration::generate(),
+    Timestamp::from_millis(1_700_000_000_000),
+  )
+}
+
 fn test_realtime() -> Arc<Realtime> {
-  Arc::new(Realtime::from_config(RealtimeConfig {
-    application_id: test_application_id(),
-    key_name: "application-1.test-key".to_owned(),
-    key_secret: "test-secret".to_owned(),
-  }))
+  Arc::new(Realtime::from_config(
+    RealtimeConfig {
+      application_id: test_application_id(),
+      key_name: "application-1.test-key".to_owned(),
+      key_secret: "test-secret".to_owned(),
+    },
+    test_node_instance(),
+  ))
 }
 
 fn test_authorization() -> VerifiedToken {
