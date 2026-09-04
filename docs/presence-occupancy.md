@@ -219,7 +219,7 @@ actor:
 unidentified ATTACH/DETACH
         |
         v
-local AggregatedOccupancyShard --(<= 1s absolute flush)--> Redis Lua
+local OccupancyShardState --(<= 1s absolute flush)--> Redis Lua
         |                                                |
         `-- local Presence SYNC/deltas                 v
                                                   Occupancy publisher
@@ -310,14 +310,13 @@ struct Attachment {
     occupancy: Option<OccupancySubscription>,
 }
 
-struct AggregatedOccupancyShard {
-    owner: PresenceOwner,
+struct OccupancyShardSnapshot {
+    node_instance: NodeInstance,
     channel: ChannelKey,
     version: u64,
     connections: u64,
     subscribers: u64,
     presence_subscribers: u64,
-    lease_deadline_ms: u64,
 }
 
 struct PresenceSnapshot {
@@ -327,11 +326,9 @@ struct PresenceSnapshot {
     occupancy: OccupancyMetrics,
 }
 
-struct CommittedTransition {
-    presence_revision: Option<u64>,
-    occupancy_version: u64,
-    event: Option<CommittedPresenceEvent>,
-    duplicate: bool,
+enum CommittedChannelTransition {
+    Unchanged { occupancy_version: u64 },
+    Changed(CommittedPresenceEvent),
 }
 
 struct CommittedPresenceEvent {
@@ -340,7 +337,7 @@ struct CommittedPresenceEvent {
 }
 
 enum PresenceMutationOutcome {
-    Committed(CommittedTransition),
+    Committed(CommittedChannelTransition),
     Rejected(PresenceProtocolError),
 }
 
@@ -354,47 +351,51 @@ struct OccupancyShardFlushResult {
 `PresenceAction::Present` используется только в `SYNC`. Canonical deltas имеют
 действия `Enter`, `Update` или `Leave`.
 
-## `PresenceStore`
+## Хранилища состояния канала
 
 Целевой контракт:
 
 ```rust
-trait PresenceStore {
+trait AttachmentStore {
     async fn attach_and_snapshot(
         &self,
         command: AttachCommand,
-    ) -> Result<AttachResult, PresenceStoreError>;
-
-    async fn apply_presence(
-        &self,
-        command: PresenceBatchCommand,
-    ) -> Result<PresenceMutationOutcome, PresenceStoreError>;
+    ) -> Result<ChannelAttachOutcome, ChannelStateStoreError>;
 
     async fn detach(
         &self,
         command: DetachCommand,
-    ) -> Result<CommittedTransition, PresenceStoreError>;
+    ) -> Result<CommittedChannelTransition, ChannelStateStoreError>;
 
     async fn disconnect(
         &self,
-        command: DisconnectCommand,
-    ) -> Result<Vec<CommittedTransition>, PresenceStoreError>;
+        command: DisconnectConnectionCommand,
+    ) -> Result<Vec<CommittedChannelTransition>, ChannelStateStoreError>;
+}
+
+trait PresenceStore {
+    async fn apply_presence(
+        &self,
+        command: PresenceBatchCommand,
+    ) -> Result<PresenceMutationReceipt, ChannelStateStoreError>;
 
     async fn snapshot(
         &self,
         channel: ChannelKey,
-    ) -> Result<PresenceSnapshot, PresenceStoreError>;
+    ) -> Result<PresenceSnapshot, ChannelStateStoreError>;
+}
 
-    async fn flush_occupancy_shard(
+trait OccupancyShardStore {
+    async fn flush(
         &self,
-        shard: AggregatedOccupancyShard,
-    ) -> Result<OccupancyShardFlushResult, PresenceStoreError>;
+        snapshot: OccupancyShardSnapshot,
+    ) -> Result<OccupancyShardFlushResult, ChannelStateStoreError>;
 }
 
 trait ChannelCommitDelivery {
     async fn after_commit(
         &self,
-        transition: &CommittedTransition,
+        transition: &CommittedChannelTransition,
     ) -> Result<(), ChannelCommitDeliveryError>;
 }
 ```
@@ -478,7 +479,7 @@ retry/resume. Иначе поздний повтор того же `msgSerial` �
 test suite. Memory-реализация нужна для автономного режима, но её внутреннее
 устройство не определяет доменную модель.
 
-`PresenceStoreError` содержит только инфраструктурные, serialization и
+`ChannelStateStoreError` содержит только инфраструктурные, serialization и
 storage-level ошибки. Ожидаемый protocol rejection не маскируется под store
 error и возвращается через `PresenceMutationOutcome::Rejected`.
 
@@ -524,7 +525,7 @@ encoding. Необработанные имена channel не использу�
 9. сохраняет operation outcome;
 10. возвращает committed event, versions и snapshot, если это attach.
 
-Отдельный `flush_occupancy_shard` Lua transition атомарно:
+Отдельный Lua transition записи Occupancy shard атомарно:
 
 1. проверяет lease и точную `boot_generation` shard-а;
 2. отклоняет version, которая не новее сохранённой;

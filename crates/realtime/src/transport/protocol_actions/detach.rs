@@ -1,31 +1,36 @@
-use crate::ProtocolMessage;
+use support::timestamp::Timestamp;
+use crate::{ChannelKey, DetachCommand, ProtocolMessage};
 use crate::transport::SocketContext;
 
 pub async fn detach(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
-  match message.channel.as_deref() {
-    Some(channel) => {
-      let leave = context
-        .presence_hub
-        .leave(channel, &context.connection.id)
-        .await;
+  let Some(channel) = message.channel.as_deref() else {
+    return ProtocolMessage::nack(message.msg_serial);
+  };
 
-      context
-        .channel_hub
-        .detach(channel, &context.connection.id)
-        .await;
+  let command = DetachCommand {
+    channel: ChannelKey::new(
+      context.connection.application_id().clone(),
+      channel,
+    ),
+    actor: context.connection.actor(),
+    request_time: Timestamp::now(),
+  };
 
-      if let Some(presence) = leave {
-        if let Err(error) = context
-          .channel_hub
-          .broadcast(channel, ProtocolMessage::presence(channel, vec![presence]))
-          .await
-        {
-          tracing::error!(%error, %channel, "failed to broadcast presence leave");
-        }
-      }
+  if let Err(error) = context.attachments.detach(command).await {
+    tracing::error!(
+      %error,
+      connection_id = context.connection.id.as_str(),
+      %channel,
+      "failed to detach connection from channel"
+    );
 
-      ProtocolMessage::detached(&message)
-    }
-    None => ProtocolMessage::nack(message.msg_serial),
+    return ProtocolMessage::nack(message.msg_serial);
   }
+
+  context
+    .router
+    .detach(channel, &context.connection.id)
+    .await;
+
+  ProtocolMessage::detached(&message)
 }

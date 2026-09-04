@@ -1,10 +1,10 @@
-use crate::{ChannelCommitDeliveryError, PresenceStoreError};
+use crate::{ChannelCommitDeliveryError, ChannelStateStoreError};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum AttachmentError {
   #[error("attachment store operation failed: {0}")]
-  Store(#[from] PresenceStoreError),
+  Store(#[from] ChannelStateStoreError),
 
   #[error("attachment transition delivery failed: {0}")]
   Delivery(#[from] ChannelCommitDeliveryError),

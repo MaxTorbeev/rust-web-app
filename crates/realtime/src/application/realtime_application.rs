@@ -1,4 +1,4 @@
-use crate::{ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionCleanupError, ConnectionId, PresenceError, PresenceService, ProtocolMessage};
+use crate::{ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection, ConnectionCleanupError, PresenceService};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 use support::NodeInstance;
@@ -11,6 +11,7 @@ pub struct RealtimeApplication {
   pub(crate) token_issuer: TokenAccessIssuer,
   pub token_verifier: TokenAccessVerifier,
   pub settings: ApplicationSettings,
+  attachments: AttachmentService,
   router: Arc<ChannelRouter>,
   presence: PresenceService,
 }
@@ -22,6 +23,7 @@ impl RealtimeApplication {
     token_issuer: TokenAccessIssuer,
     token_verifier: TokenAccessVerifier,
     router: Arc<ChannelRouter>,
+    attachments: AttachmentService,
     presence: PresenceService,
   ) -> Self {
     Self {
@@ -32,11 +34,16 @@ impl RealtimeApplication {
       settings: ApplicationSettings::default(),
       router,
       presence,
+      attachments
     }
   }
 
   pub fn router(&self) -> &ChannelRouter {
     self.router.as_ref()
+  }
+
+  pub fn attachments(&self) -> &AttachmentService {
+    &self.attachments
   }
 
   pub fn presence(&self) -> &PresenceService {
@@ -58,7 +65,7 @@ impl RealtimeApplication {
     self.router().disconnect(&connection.id).await;
 
     self
-      .presence()
+      .attachments()
       .disconnect(DisconnectConnectionCommand {
         actor: connection.actor(),
         request_time: Timestamp::now(),

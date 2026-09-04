@@ -1,33 +1,5 @@
-use crate::channel::attachment::Attachment;
-use crate::{CommittedTransition, OccupancyShardBaseline, PresenceRejection, PresenceSnapshot};
+use crate::{CommittedChannelTransition, PresenceRejection};
 use serde::{Deserialize, Serialize};
-
-/// Результат подготовки ATTACH в хранилище.
-///
-/// Для индивидуально учитываемого подключения хранилище сохраняет
-/// [`Attachment`] и возвращает состояние канала после этой операции.
-///
-/// Для агрегированно учитываемого подключения отдельная запись не создаётся:
-/// хранилище возвращает снимок канала и счётчики текущего экземпляра ноды,
-/// уже включённые в этот снимок.
-pub struct PresenceAttachOutcome {
-  /// Параметры работы соединения с каналом, сохранённые хранилищем.
-  pub attachment: Attachment,
-
-  /// Снимок Presence и Occupancy после сохранения attachment.
-  pub snapshot: PresenceSnapshot,
-
-  /// Результат перехода состояния, зафиксированного этой операцией.
-  ///
-  /// При идемпотентном повторе может не содержать нового события.
-  pub transition: CommittedTransition,
-
-  /// Счётчики `NodeInstance`, обслуживающего соединение, которые уже входят
-  /// в `snapshot.occupancy`.
-  ///
-  /// `None`, если подключение учитывается индивидуально.
-  pub occupancy_shard_baseline: Option<OccupancyShardBaseline>,
-}
 
 /// Итог обработки команды изменения Presence.
 ///
@@ -36,11 +8,11 @@ pub struct PresenceAttachOutcome {
 /// элементов одной команды не допускается.
 ///
 /// Инфраструктурные ошибки хранилища в этот тип не входят и возвращаются через
-/// `Result<_, PresenceStoreError>`.
+/// `Result<_, ChannelStateStoreError>`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PresenceMutationOutcome {
   /// Все изменения команды зафиксированы.
-  Committed(CommittedTransition),
+  Committed(CommittedChannelTransition),
 
   /// Команда отклонена без изменения Presence.
   Rejected(PresenceRejection),

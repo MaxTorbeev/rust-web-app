@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::channel::attachment::{AttachCommand, AttachmentError, AttachmentStore, DetachCommand};
 use crate::connection::DisconnectConnectionCommand;
-use crate::{ChannelCommitDelivery, CommittedTransition, PresenceAttachOutcome};
+use crate::{ChannelAttachOutcome, ChannelCommitDelivery, CommittedChannelTransition};
 
 /// Управляет жизненным циклом соединения с каналами.
 ///
@@ -26,7 +26,7 @@ impl AttachmentService {
   pub async fn attach(
     &self,
     command: AttachCommand,
-  ) -> Result<PresenceAttachOutcome, AttachmentError> {
+  ) -> Result<ChannelAttachOutcome, AttachmentError> {
     let outcome = self.store.attach_and_snapshot(command).await?;
 
     self.delivery.after_commit(&outcome.transition).await?;
@@ -41,7 +41,7 @@ impl AttachmentService {
   pub async fn detach(
     &self,
     command: DetachCommand,
-  ) -> Result<CommittedTransition, AttachmentError> {
+  ) -> Result<CommittedChannelTransition, AttachmentError> {
     let transition = self.store.detach(command).await?;
 
     self.delivery.after_commit(&transition).await?;
@@ -56,7 +56,7 @@ impl AttachmentService {
   pub async fn disconnect(
     &self,
     command: DisconnectConnectionCommand,
-  ) -> Result<Vec<CommittedTransition>, AttachmentError> {
+  ) -> Result<Vec<CommittedChannelTransition>, AttachmentError> {
     let transitions = self.store.disconnect(command).await?;
 
     for transition in &transitions {

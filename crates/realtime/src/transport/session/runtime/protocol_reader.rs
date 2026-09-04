@@ -71,8 +71,9 @@ impl ProtocolReader {
           let context = SocketContext {
             connection: &connection,
             sender: &sender,
-            presence_hub: &application.presence_hub,
-            channel_hub: &application.channel_hub,
+            router: application.router(),
+            attachments: application.attachments(),
+            presence: application.presence(),
             event_bus,
           };
 

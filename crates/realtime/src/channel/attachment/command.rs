@@ -1,37 +1,41 @@
 use crate::connection::ConnectionActor;
-use crate::{ChannelKey, ChannelMode, OccupancySubscription};
+use crate::{Attachment, AttachmentTracking, ChannelKey, ChannelMode, OccupancySubscription};
 use support::timestamp::Timestamp;
-use uuid::Uuid;
 
-/// Запрос на начало работы с каналом в текущей WebSocket-сессии.
+/// Команда на начало работы соединения с каналом.
 #[derive(Debug, Clone)]
 pub struct AttachCommand {
   pub channel: ChannelKey,
   pub actor: ConnectionActor,
-
-  /// Attach retry key: (application_id, connection_id, msg_serial),
-  /// passed separately through protocol handler.
-  pub msg_serial: Option<u64>,
-
-  /// Stable operation identifier for idempotent storage outcome.
-  pub operation_id: Uuid,
-
-  /// Deterministic normalized payload hash for exact payload replay checks.
-  pub normalized_request_hash: String,
-
-  /// Server timestamp in ms.
-  pub request_time_ms: Timestamp,
-
+  /// Способ хранения и учёта attachment.
+  pub accounting: AttachmentTracking,
   /// Effective (server calculated) modes and requested occupancy subscription.
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
+  /// Server timestamp in ms.
+  pub request_time: Timestamp,
 }
 
+impl AttachCommand {
+  /// Создаёт запись attachment из параметров команды.
+  pub fn to_attachment(&self) -> Attachment {
+    Attachment {
+      connection_id: self.actor.connection_id.clone(),
+      node_instance: self.actor.node_instance.clone(),
+      accounting: self.accounting,
+      effective_modes: self.effective_modes.clone(),
+      occupancy: self.occupancy.clone(),
+    }
+  }
+}
+
+/// Команда завершения работы соединения с одним каналом.
 #[derive(Debug, Clone)]
 pub struct DetachCommand {
+  /// Канал, работу с которым необходимо завершить соединение.
   pub channel: ChannelKey,
+  /// Соединение и экземпляр ноды, обслуживающий его.
   pub actor: ConnectionActor,
-  pub operation_id: Uuid,
-  pub normalized_request_hash: String,
+  /// Время начала обработки команды сервером.
   pub request_time: Timestamp,
 }

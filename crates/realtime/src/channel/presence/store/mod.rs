@@ -1,5 +1,5 @@
 mod contract;
-mod error;
+mod operation_record;
 
 pub use contract::*;
-pub use error::*;
+pub(crate) use operation_record::PresenceOperationRecord;
