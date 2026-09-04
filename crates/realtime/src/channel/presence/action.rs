@@ -8,6 +8,20 @@ pub enum PresenceMutationAction {
   Update,
 }
 
+impl PresenceMutationAction {
+  /// Возвращает стабильное имя действия для нормализации команды.
+  ///
+  /// Значение участвует в хеше запроса. Его изменение требует смены версии
+  /// формата журнала операций, иначе одинаковые команды получат разные хеши.
+  pub const fn as_str(self) -> &'static str {
+    match self {
+      Self::Enter => "enter",
+      Self::Update => "update",
+      Self::Leave => "leave",
+    }
+  }
+}
+
 impl TryFrom<PresenceAction> for PresenceMutationAction {
   type Error = PresenceAction;
 

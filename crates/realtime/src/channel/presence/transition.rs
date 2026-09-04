@@ -1,6 +1,7 @@
+use serde::{Deserialize, Serialize};
 use crate::CommittedPresenceEvent;
 
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedTransition {
   /// Новая ревизия Presence.
   /// None, если изменился только attachment/Occupancy.

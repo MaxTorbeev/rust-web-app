@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, Eq, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum PresenceRejection {
   NotAttached,
   UnidentifiedConnection,

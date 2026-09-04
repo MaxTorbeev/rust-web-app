@@ -36,6 +36,7 @@ impl Connection {
 
   pub fn actor(&self) -> ConnectionActor {
     ConnectionActor {
+      application_id: self.application_id.clone(),
       connection_id: self.id.clone(),
       node_instance: self.node_instance.clone(),
     }

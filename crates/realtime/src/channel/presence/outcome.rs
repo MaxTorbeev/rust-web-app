@@ -1,15 +1,15 @@
-use crate::{CommittedTransition, PresenceRejection, PresenceSnapshot};
+use serde::{Deserialize, Serialize};
+use crate::{CommittedTransition, OccupancyShardBaseline, PresenceRejection, PresenceSnapshot};
 use crate::channel::attachment::Attachment;
 
-/// Результат обработки ATTACH в хранилище.
+/// Результат подготовки ATTACH в хранилище.
 ///
-/// Хранилище в рамках одной неделимой операции сохраняет [`Attachment`]
-/// и получает снимок состояния канала с учётом сохранённых изменений.
+/// Для индивидуально учитываемого подключения хранилище сохраняет
+/// [`Attachment`] и возвращает состояние канала после этой операции.
 ///
-/// Повторная обработка того же ATTACH не создаёт второй attachment и не
-/// увеличивает счётчики повторно, но возвращает актуальный снимок состояния.
-///
-/// Это внутренний результат Presence, а не протокольный ответ клиенту.
+/// Для агрегированно учитываемого подключения отдельная запись не создаётся:
+/// хранилище возвращает снимок канала и счётчики текущего экземпляра ноды,
+/// уже включённые в этот снимок.
 pub struct PresenceAttachOutcome {
   /// Параметры работы соединения с каналом, сохранённые хранилищем.
   pub attachment: Attachment,
@@ -21,6 +21,12 @@ pub struct PresenceAttachOutcome {
   ///
   /// При идемпотентном повторе может не содержать нового события.
   pub transition: CommittedTransition,
+
+  /// Счётчики `NodeInstance`, обслуживающего соединение, которые уже входят
+  /// в `snapshot.occupancy`.
+  ///
+  /// `None`, если подключение учитывается индивидуально.
+  pub occupancy_shard_baseline: Option<OccupancyShardBaseline>
 }
 
 /// Итог обработки команды изменения Presence.
@@ -31,12 +37,13 @@ pub struct PresenceAttachOutcome {
 ///
 /// Инфраструктурные ошибки хранилища в этот тип не входят и возвращаются через
 /// `Result<_, PresenceStoreError>`.
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PresenceMutationOutcome {
-  /// Состояние надёжно изменено или операция уже была выполнена
+  /// Все изменения команды зафиксированы.
   Committed(CommittedTransition),
-  /// Запрос корректно обработан, но доменные условия не выполнены;
-  Rejected(PresenceRejection)
+
+  /// Команда отклонена без изменения Presence.
+  Rejected(PresenceRejection),
 }
 
 /// Результат обработки команды изменения Presence.
@@ -48,7 +55,7 @@ pub enum PresenceMutationOutcome {
 /// Повторная обработка не изменяет Presence, не создаёт новую ревизию и событие.
 /// Клиенту при этом должен быть возвращён тот же ACK или NACK, что и при первой
 /// обработке команды.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct PresenceMutationReceipt {
   /// Зафиксированный или отклонённый результат операции.
   pub outcome: PresenceMutationOutcome,

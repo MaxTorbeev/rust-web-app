@@ -26,3 +26,4 @@ pub use outcome::*;
 pub use error::*;
 pub use client_id_policy::*;
 pub use rejection::*;
+pub use command::*;

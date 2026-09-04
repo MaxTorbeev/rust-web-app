@@ -11,6 +11,14 @@ pub struct PresenceService {
 
 impl PresenceService {
 
+  pub fn new(
+    store: Arc<dyn PresenceStore>,
+    delivery: Arc<dyn PresenceCommitDelivery>,
+  ) -> Self {
+    Self { store, delivery }
+  }
+
+
   /// Запрос на начало работы с каналом в текущей WebSocket-сессии.
   ///
   /// ATTACH сообщает серверу: «в этой сессии клиент начинает работать с таким-то каналом».

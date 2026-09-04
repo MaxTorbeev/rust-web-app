@@ -4,7 +4,7 @@ use crate::ChannelKey;
 /// Absolute per-owner contribution for attachments represented only in
 /// aggregated Occupancy state.
 #[derive(Debug, Clone)]
-pub struct AggregatedOccupancyShard {
+pub struct OccupancyShardSnapshot {
   pub owner: NodeInstance,
   pub channel: ChannelKey,
   pub version: u64,

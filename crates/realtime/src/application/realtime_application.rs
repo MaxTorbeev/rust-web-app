@@ -1,10 +1,9 @@
-use crate::{
-  ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionId, PresenceService,
-  ProtocolMessage,
-};
+use crate::{ApplicationId, ApplicationSettings, ChannelRouter, Connection, ConnectionCleanupError, ConnectionId, PresenceError, PresenceService, ProtocolMessage};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 use support::NodeInstance;
+use support::timestamp::Timestamp;
+use crate::connection::DisconnectConnectionCommand;
 
 pub struct RealtimeApplication {
   pub id: ApplicationId,
@@ -31,13 +30,13 @@ impl RealtimeApplication {
       token_issuer,
       token_verifier,
       settings: ApplicationSettings::default(),
-      router: Arc::new(ChannelRouter::new()),
-      presence: Arc::new(PresenceHub::new()),
+      router,
+      presence,
     }
   }
 
   pub fn router(&self) -> &ChannelRouter {
-    &self.router.as_ref()
+    self.router.as_ref()
   }
 
   pub fn presence(&self) -> &PresenceService {
@@ -54,22 +53,18 @@ impl RealtimeApplication {
 
   /// Removes one connection from channel and presence state
   /// and broadcasts the resulting presence leave messages.
-  pub async fn disconnect_connection(&self, connection_id: &ConnectionId) {
-    let leaves = self.presence().disconnect(connection_id).await;
+  pub async fn disconnect_connection(&self, connection: &Connection) -> Result<(), ConnectionCleanupError> {
+    // Сначала исключаем закрывающееся соединение из локальной доставки.
+    self.router().disconnect(&connection.id).await;
 
-    self.router().disconnect(connection_id).await;
+    self
+      .presence()
+      .disconnect(DisconnectConnectionCommand {
+        actor: connection.actor(),
+        request_time: Timestamp::now(),
+      })
+      .await?;
 
-    for (channel, presence) in leaves {
-      if let Err(error) = self
-        .router()
-        .broadcast(
-          &channel,
-          ProtocolMessage::presence(&channel, vec![presence]),
-        )
-        .await
-      {
-        tracing::error!(%error, %channel, "failed to broadcast disconnected presence leave");
-      }
-    }
+    Ok(())
   }
 }

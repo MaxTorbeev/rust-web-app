@@ -3,9 +3,11 @@ mod application_key_name;
 mod application_registry;
 mod application_settings;
 mod realtime_application;
+mod error;
 
 pub use application_id::*;
 pub use application_key_name::*;
 pub use application_registry::*;
 pub use application_settings::*;
 pub use realtime_application::*;
+pub use error::*;

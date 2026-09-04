@@ -15,7 +15,7 @@ pub enum PresenceChangeAction {
 
 /// Полностью сформированное неизменяемое событие,
 /// соответствующее уже зафиксированному изменению Presence.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommittedPresenceEvent {
   event_id: Uuid,
   change: PresenceChannelChanged,
