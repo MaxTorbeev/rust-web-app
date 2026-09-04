@@ -36,7 +36,7 @@ pub struct PresenceAttachOutcome {
 /// элементов одной команды не допускается.
 ///
 /// Инфраструктурные ошибки хранилища в этот тип не входят и возвращаются через
-/// `Result<_, PresenceStoreError>`.
+/// `Result<_, ChannelStateStoreError>`.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum PresenceMutationOutcome {
   /// Все изменения команды зафиксированы.

@@ -363,32 +363,32 @@ trait PresenceStore {
     async fn attach_and_snapshot(
         &self,
         command: AttachCommand,
-    ) -> Result<AttachResult, PresenceStoreError>;
+    ) -> Result<AttachResult, ChannelStateStoreError>;
 
     async fn apply_presence(
         &self,
         command: PresenceBatchCommand,
-    ) -> Result<PresenceMutationOutcome, PresenceStoreError>;
+    ) -> Result<PresenceMutationOutcome, ChannelStateStoreError>;
 
     async fn detach(
         &self,
         command: DetachCommand,
-    ) -> Result<CommittedTransition, PresenceStoreError>;
+    ) -> Result<CommittedTransition, ChannelStateStoreError>;
 
     async fn disconnect(
         &self,
         command: DisconnectCommand,
-    ) -> Result<Vec<CommittedTransition>, PresenceStoreError>;
+    ) -> Result<Vec<CommittedTransition>, ChannelStateStoreError>;
 
     async fn snapshot(
         &self,
         channel: ChannelKey,
-    ) -> Result<PresenceSnapshot, PresenceStoreError>;
+    ) -> Result<PresenceSnapshot, ChannelStateStoreError>;
 
     async fn flush_occupancy_shard(
         &self,
         shard: AggregatedOccupancyShard,
-    ) -> Result<OccupancyShardFlushResult, PresenceStoreError>;
+    ) -> Result<OccupancyShardFlushResult, ChannelStateStoreError>;
 }
 
 trait ChannelCommitDelivery {
@@ -478,7 +478,7 @@ retry/resume. Иначе поздний повтор того же `msgSerial` �
 test suite. Memory-реализация нужна для автономного режима, но её внутреннее
 устройство не определяет доменную модель.
 
-`PresenceStoreError` содержит только инфраструктурные, serialization и
+`ChannelStateStoreError` содержит только инфраструктурные, serialization и
 storage-level ошибки. Ожидаемый protocol rejection не маскируется под store
 error и возвращается через `PresenceMutationOutcome::Rejected`.
 

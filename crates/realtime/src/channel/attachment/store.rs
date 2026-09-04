@@ -2,10 +2,10 @@ use std::{future::Future, pin::Pin};
 
 use crate::channel::attachment::{AttachCommand, DetachCommand};
 use crate::connection::DisconnectConnectionCommand;
-use crate::{CommittedTransition, PresenceAttachOutcome, PresenceStoreError};
+use crate::{ChannelStateStoreError, CommittedTransition, PresenceAttachOutcome};
 
 pub type AttachmentStoreFuture<'a, T> =
-  Pin<Box<dyn Future<Output = Result<T, PresenceStoreError>> + Send + 'a>>;
+  Pin<Box<dyn Future<Output = Result<T, ChannelStateStoreError>> + Send + 'a>>;
 
 /// Хранилище состояния соединений, работающих с каналами.
 pub trait AttachmentStore: Send + Sync {
