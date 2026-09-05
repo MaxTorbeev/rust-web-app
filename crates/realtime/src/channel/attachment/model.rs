@@ -1,4 +1,4 @@
-use crate::{ChannelMode, ConnectionId, OccupancySubscription};
+use crate::{AttachmentAccounting, ChannelMode, ConnectionId, OccupancySubscription};
 use support::NodeInstance;
 
 /// Запись о том, что Realtime-соединение присоединено к каналу,
@@ -6,7 +6,9 @@ use support::NodeInstance;
 #[derive(Debug, Clone)]
 pub struct Attachment {
   pub connection_id: ConnectionId,
-  pub owner: NodeInstance,
+  /// Экземпляр ноды, обслуживающий соединение.
+  pub node_instance: NodeInstance,
+  pub accounting: AttachmentAccounting,
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
 }

@@ -1,5 +1,5 @@
 use crate::connection::ConnectionActor;
-use crate::{ChannelKey, ChannelMode, OccupancySubscription};
+use crate::{Attachment, AttachmentAccounting, ChannelKey, ChannelMode, OccupancySubscription};
 use support::timestamp::Timestamp;
 
 /// Команда на начало работы соединения с каналом.
@@ -7,11 +7,26 @@ use support::timestamp::Timestamp;
 pub struct AttachCommand {
   pub channel: ChannelKey,
   pub actor: ConnectionActor,
+  /// Способ хранения и учёта attachment.
+  pub accounting: AttachmentAccounting,
   /// Effective (server calculated) modes and requested occupancy subscription.
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
   /// Server timestamp in ms.
   pub request_time: Timestamp,
+}
+
+impl AttachCommand {
+  /// Создаёт запись attachment из параметров команды.
+  pub fn to_attachment(&self) -> Attachment {
+    Attachment {
+      connection_id: self.actor.connection_id.clone(),
+      node_instance: self.actor.node_instance.clone(),
+      accounting: self.accounting,
+      effective_modes: self.effective_modes.clone(),
+      occupancy: self.occupancy.clone(),
+    }
+  }
 }
 
 /// Команда завершения работы соединения с одним каналом.
