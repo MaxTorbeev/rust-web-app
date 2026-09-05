@@ -151,6 +151,7 @@ mod tests {
       max_frame_size: 1_004,
       connection_state_ttl: 1_005,
       max_idle_interval: 1_006,
+      presence_ledger_capacity: 1_007,
     };
     let mut application = test_application("application-1", initial_settings.clone());
     let connection = application.create_connection(test_authorization());

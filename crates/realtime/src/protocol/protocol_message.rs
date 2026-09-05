@@ -2,6 +2,7 @@ use crate::{
   Connection, ConnectionDetails, Message, PresenceMessage, ProtocolAction, ProtocolFlag,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -40,6 +41,10 @@ pub struct ProtocolMessage {
 
   #[serde(skip_serializing_if = "Option::is_none")]
   pub flags: Option<u64>,
+
+  /// Параметры канала: запрошенные в `ATTACH`, распознанные — в `ATTACHED`.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub params: Option<BTreeMap<String, String>>,
 }
 
 impl ProtocolMessage {
@@ -55,6 +60,7 @@ impl ProtocolMessage {
       auth: None,
       count: None,
       flags: None,
+      params: None,
     }
   }
 
@@ -81,11 +87,26 @@ impl ProtocolMessage {
     }
   }
 
-  pub fn attached(message: &ProtocolMessage, flags: ProtocolFlag) -> Self {
+  /// `ATTACHED` с effective flags и распознанным подмножеством params.
+  pub fn attached(
+    message: &ProtocolMessage,
+    flags: ProtocolFlag,
+    params: BTreeMap<String, String>,
+  ) -> Self {
     Self {
       flags: (!flags.is_empty()).then_some(flags.bits()),
+      params: (!params.is_empty()).then_some(params),
       ..Self::for_channel(ProtocolAction::Attached, message)
     }
+  }
+
+  /// Значение параметра канала из `ATTACH.params`.
+  pub fn param(&self, name: &str) -> Option<&str> {
+    self
+      .params
+      .as_ref()
+      .and_then(|params| params.get(name))
+      .map(String::as_str)
   }
 
   pub fn ack(request: &Self) -> Self {

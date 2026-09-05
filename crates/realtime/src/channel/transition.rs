@@ -69,7 +69,8 @@ mod tests {
       },
       "origin": {
         "node_id": "node-1",
-        "boot_generation": "293a2951-5ba0-482c-91c7-0a0c72a5ce4b"
+        "boot_generation": "293a2951-5ba0-482c-91c7-0a0c72a5ce4b",
+        "started_at": 1_700_000_000_000_u64
       },
       "presence_revision": 11,
       "occupancy_version": 7,

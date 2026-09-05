@@ -1,5 +1,5 @@
 use crate::channel::presence::command::PresenceBatchCommand;
-use crate::{ChannelCommitDelivery, PresenceError, PresenceMutationOutcome, PresenceStore};
+use crate::{ChannelCommitDelivery, ChannelKey, PresenceError, PresenceMutationOutcome, PresenceSnapshot, PresenceStore};
 use std::sync::Arc;
 
 pub struct PresenceService {
@@ -23,5 +23,10 @@ impl PresenceService {
     }
 
     Ok(receipt.outcome)
+  }
+
+  /// Возвращает текущий снимок Presence и Occupancy канала.
+  pub async fn snapshot(&self, channel: ChannelKey) -> Result<PresenceSnapshot, PresenceError> {
+    Ok(self.store.snapshot(channel).await?)
   }
 }
