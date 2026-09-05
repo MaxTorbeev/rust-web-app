@@ -326,11 +326,9 @@ struct PresenceSnapshot {
     occupancy: OccupancyMetrics,
 }
 
-struct CommittedChannelTransition {
-    presence_revision: Option<u64>,
-    occupancy_version: u64,
-    event: Option<CommittedPresenceEvent>,
-    duplicate: bool,
+enum CommittedChannelTransition {
+    Unchanged { occupancy_version: u64 },
+    Changed(CommittedPresenceEvent),
 }
 
 struct CommittedPresenceEvent {
