@@ -7,6 +7,7 @@ mod mode;
 mod occupancy;
 mod presence;
 mod store;
+mod transition;
 
 pub use attachment::*;
 pub use delivery::*;
@@ -15,3 +16,4 @@ pub use mode::*;
 pub use occupancy::*;
 pub use presence::*;
 pub use store::*;
+pub use transition::*;

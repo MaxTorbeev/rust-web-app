@@ -1,6 +1,7 @@
 use crate::ApplicationId;
 use serde::{Deserialize, Serialize};
 
+/// Канал и приложение, к которым подключается соединение.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
 pub struct ChannelKey {
   pub application_id: ApplicationId,

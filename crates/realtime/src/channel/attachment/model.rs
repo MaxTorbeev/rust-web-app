@@ -1,7 +1,8 @@
 use crate::{ChannelMode, ConnectionId, OccupancySubscription};
 use support::NodeInstance;
 
-/// Состояние работы WebSocket-сессии с одним каналом.
+/// Запись о том, что Realtime-соединение присоединено к каналу,
+/// и параметры этого присоединения.
 #[derive(Debug, Clone)]
 pub struct Attachment {
   pub connection_id: ConnectionId,

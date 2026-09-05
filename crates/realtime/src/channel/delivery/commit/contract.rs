@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crate::{ChannelCommitDeliveryError, CommittedTransition};
+use crate::{ChannelCommitDeliveryError, CommittedChannelTransition};
 
 pub type ChannelCommitDeliveryFuture<'a> =
   Pin<Box<dyn Future<Output = Result<(), ChannelCommitDeliveryError>> + Send + 'a>>;
@@ -8,7 +8,7 @@ pub type ChannelCommitDeliveryFuture<'a> =
 /// Обрабатывает результат уже зафиксированного изменения состояния канала.
 ///
 /// Метод вызывается только после того, как операция изменения состояния канала
-/// была атомарно зафиксирована и хранилище вернуло [`CommittedTransition`].
+/// была атомарно зафиксирована и хранилище вернуло [`CommittedChannelTransition`].
 /// Ошибка последующей обработки не отменяет зафиксированную операцию.
 ///
 /// В локальном режиме реализация передаёт созданное событие локальному
@@ -20,6 +20,6 @@ pub type ChannelCommitDeliveryFuture<'a> =
 pub trait ChannelCommitDelivery: Send + Sync {
   fn after_commit<'a>(
     &'a self,
-    transition: &'a CommittedTransition,
+    transition: &'a CommittedChannelTransition,
   ) -> ChannelCommitDeliveryFuture<'a>;
 }

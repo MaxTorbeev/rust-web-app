@@ -326,7 +326,7 @@ struct PresenceSnapshot {
     occupancy: OccupancyMetrics,
 }
 
-struct CommittedTransition {
+struct CommittedChannelTransition {
     presence_revision: Option<u64>,
     occupancy_version: u64,
     event: Option<CommittedPresenceEvent>,
@@ -339,7 +339,7 @@ struct CommittedPresenceEvent {
 }
 
 enum PresenceMutationOutcome {
-    Committed(CommittedTransition),
+    Committed(CommittedChannelTransition),
     Rejected(PresenceProtocolError),
 }
 
@@ -362,17 +362,17 @@ trait AttachmentStore {
     async fn attach_and_snapshot(
         &self,
         command: AttachCommand,
-    ) -> Result<PresenceAttachOutcome, ChannelStateStoreError>;
+    ) -> Result<ChannelAttachOutcome, ChannelStateStoreError>;
 
     async fn detach(
         &self,
         command: DetachCommand,
-    ) -> Result<CommittedTransition, ChannelStateStoreError>;
+    ) -> Result<CommittedChannelTransition, ChannelStateStoreError>;
 
     async fn disconnect(
         &self,
         command: DisconnectConnectionCommand,
-    ) -> Result<Vec<CommittedTransition>, ChannelStateStoreError>;
+    ) -> Result<Vec<CommittedChannelTransition>, ChannelStateStoreError>;
 }
 
 trait PresenceStore {
@@ -397,7 +397,7 @@ trait OccupancyShardStore {
 trait ChannelCommitDelivery {
     async fn after_commit(
         &self,
-        transition: &CommittedTransition,
+        transition: &CommittedChannelTransition,
     ) -> Result<(), ChannelCommitDeliveryError>;
 }
 ```

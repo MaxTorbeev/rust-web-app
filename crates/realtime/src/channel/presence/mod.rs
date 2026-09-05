@@ -10,7 +10,6 @@ mod rejection;
 mod service;
 mod snapshot;
 mod store;
-mod transition;
 
 pub use action::*;
 pub use actor::*;
@@ -24,4 +23,3 @@ pub use rejection::*;
 pub use service::*;
 pub use snapshot::*;
 pub use store::*;
-pub use transition::*;

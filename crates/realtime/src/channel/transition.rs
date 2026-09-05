@@ -2,7 +2,7 @@ use crate::CommittedPresenceEvent;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CommittedTransition {
+pub struct CommittedChannelTransition {
   /// Новая ревизия Presence.
   /// None, если изменился только attachment/Occupancy.
   pub presence_revision: Option<u64>,

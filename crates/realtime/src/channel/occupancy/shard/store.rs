@@ -5,7 +5,10 @@ use crate::{ChannelStateStoreError, OccupancyShardFlushResult, OccupancyShardSna
 pub type OccupancyShardStoreFuture<'a, T> =
   Pin<Box<dyn Future<Output = Result<T, ChannelStateStoreError>> + Send + 'a>>;
 
-/// Хранилище агрегированных вкладов экземпляров нод в Occupancy каналов.
+/// Хранилище снимков локальных счётчиков Occupancy.
+///
+/// Для каждой пары `(node_instance, channel)` хранит последнюю версию
+/// абсолютных счётчиков и учитывает её при расчёте общих метрик канала.
 pub trait OccupancyShardStore: Send + Sync {
   /// Сохраняет абсолютные счётчики Occupancy одного канала,
   /// собранные конкретным экземпляром ноды.

@@ -82,10 +82,13 @@ impl WebSocketSession {
     }
 
     // Удаляем соединение из всех channels и presence и прочее.
-    self
+    if let Err(error) = self
       .application
-      .disconnect_connection(&self.connection.id)
-      .await;
+      .disconnect_connection(&self.connection)
+      .await
+    {
+      tracing::error!(%error, connection_id = self.connection.id.as_str(), "failed to clean up disconnected connection");
+    }
 
     // Очистить структуру отправителя
     drop(self.sender);
