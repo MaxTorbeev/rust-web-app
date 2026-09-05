@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use uuid::Uuid;
 use support::NodeInstance;
-use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
+use crate::{Attachment, AttachmentTracking, ChannelKey, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, DetachCommand, OccupancyChange, OccupancyMetrics, PresenceChangeAction, PresenceChannelChanged, PresenceMember, PresenceMemberChange, PresenceSnapshot};
+use crate::channel::store::memory::store_state::ConnectionKey;
 use crate::connection::ConnectionActor;
 
 /// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
@@ -32,12 +34,17 @@ pub(super) struct ChannelState {
   occupancy_version: u64,
 }
 
-/// Измененные состояния канала после удаления индивидуального attachment.
-pub(super) struct IndividualDetachOutcome {
-  pub(super) removed_members: Vec<PresenceMember>,
-  pub(super) presence_revision: Option<u64>,
-  pub(super) occupancy_version: u64,
-  pub(super) occupancy_change: OccupancyChange,
+/// Результат удаления индивидуального attachment.
+pub(super) enum IndividualDetachOutcome {
+  NotAttached {
+    occupancy_version: u64,
+  },
+  Detached {
+    removed_members: Vec<PresenceMember>,
+    presence_revision: Option<u64>,
+    occupancy_version: u64,
+    occupancy_change: OccupancyChange,
+  },
 }
 
 impl ChannelState {
@@ -107,6 +114,10 @@ impl ChannelState {
     }
   }
 
+  pub(super) const fn occupancy_version(&self) -> u64 {
+    self.occupancy_version
+  }
+
   /// Сохраняет или обновляет attachment соединения.
   ///
   /// Возвращает изменение Occupancy, если сохранение повлияло на метрики канала.
@@ -139,12 +150,51 @@ impl ChannelState {
   pub(super) fn detach_individual(
     &mut self,
     actor: &ConnectionActor,
-  ) -> Result<Option<IndividualDetachOutcome>, ChannelStateStoreError> {
+  ) -> Result<IndividualDetachOutcome, ChannelStateStoreError> {
     let Some(attachment) = self.attachments.get(&actor.connection_id) else {
-      // Если attachment отсутствует, возвращается Ok(None)
-      return Ok(None);
+      return Ok(IndividualDetachOutcome::NotAttached {
+        occupancy_version: self.occupancy_version,
+      });
     };
 
+    Self::validate_individual_detach(attachment, actor)?;
+
+    let has_members = self
+      .members
+      .get(&actor.connection_id)
+      .is_some_and(|members| !members.is_empty());
+
+    // Обе версии проверяем до изменения состояния.
+    let next_presence_revision = if has_members {
+      Some(self.next_presence_revision()?)
+    } else {
+      None
+    };
+    let next_occupancy_version = self.next_occupancy_version()?;
+
+    let before = self.occupancy();
+
+    self.attachments.remove(&actor.connection_id);
+    let removed_members = self.remove_members(&actor.connection_id);
+
+    if let Some(revision) = next_presence_revision {
+      self.presence_revision = revision;
+    }
+    self.occupancy_version = next_occupancy_version;
+
+    let after = self.occupancy();
+    let occupancy_change = OccupancyChange::between(before, after)
+      .expect("removing an individual attachment must change occupancy");
+
+    Ok(IndividualDetachOutcome::Detached {
+      removed_members,
+      presence_revision: next_presence_revision,
+      occupancy_version: next_occupancy_version,
+      occupancy_change,
+    })
+  }
+
+  fn validate_individual_detach(attachment: &Attachment, actor: &ConnectionActor) -> Result<(), ChannelStateStoreError> {
     if attachment.node_instance != actor.node_instance {
       return Err(ChannelStateStoreError::Conflict {
         message: format!(
@@ -160,39 +210,31 @@ impl ChannelState {
       });
     }
 
-    let has_members = self
-      .members
-      .get(&actor.connection_id)
-      .is_some_and(|members| !members.is_empty());
+    Ok(())
+  }
 
-    // Обе версии проверяем до изменения состояния.
-    let next_presence_revision = if has_members {
-      Some(
-        self
-          .presence_revision
-          .checked_add(1)
-          .ok_or_else(|| ChannelStateStoreError::Internal {
-            message: "presence revision overflow".to_owned(),
-          })?,
-      )
-    } else {
-      None
-    };
+  fn next_presence_revision(&self) -> Result<u64, ChannelStateStoreError> {
+    self
+      .presence_revision
+      .checked_add(1)
+      .ok_or_else(|| ChannelStateStoreError::Internal {
+        message: "presence revision overflow".to_owned(),
+      })
+  }
 
-    let next_occupancy_version = self
+  fn next_occupancy_version(&self) -> Result<u64, ChannelStateStoreError> {
+    self
       .occupancy_version
       .checked_add(1)
       .ok_or_else(|| ChannelStateStoreError::Internal {
         message: "occupancy version overflow".to_owned(),
-      })?;
+      })
+  }
 
-    let before = self.occupancy();
-
-    self.attachments.remove(&actor.connection_id);
-
+  fn remove_members(&mut self, connection_id: &ConnectionId) -> Vec<PresenceMember> {
     let mut removed_members = self
       .members
-      .remove(&actor.connection_id)
+      .remove(connection_id)
       .unwrap_or_default()
       .into_values()
       .collect::<Vec<_>>();
@@ -200,23 +242,7 @@ impl ChannelState {
     // HashMap не гарантирует порядок. Событие должно быть детерминированным.
     removed_members.sort_by(|left, right| left.client_id.cmp(&right.client_id));
 
-    if let Some(revision) = next_presence_revision {
-      self.presence_revision = revision;
-    }
-
-    self.occupancy_version = next_occupancy_version;
-
-    let after = self.occupancy();
-
-    let occupancy_change = OccupancyChange::between(before, after)
-      .expect("removing an individual attachment must change occupancy");
-
-    Ok(Some(IndividualDetachOutcome {
-      removed_members,
-      presence_revision: next_presence_revision,
-      occupancy_version: next_occupancy_version,
-      occupancy_change,
-    }))
+    removed_members
   }
 
   fn validate_attachment(&self, attachment: &Attachment) -> Result<(), ChannelStateStoreError> {

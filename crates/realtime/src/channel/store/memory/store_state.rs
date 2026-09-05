@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use super::channel_state::ChannelState;
-use crate::{ApplicationId, AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, PresenceChannelChanged, PresenceMutationOutcome, PresenceSnapshot};
+use super::channel_state::{ChannelState, IndividualDetachOutcome};
+use crate::{ApplicationId, AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, DetachCommand, PresenceChangeAction, PresenceChannelChanged, PresenceMemberChange, PresenceMutationOutcome, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 
 /// Сохранённый результат обработанной Presence-команды.
@@ -119,4 +119,94 @@ impl MemoryStoreState {
       occupancy_shard_baseline: None,
     })
   }
+
+  /// Завершает работу соединения с одним каналом.
+  ///
+  /// Вместе с attachment удаляет всех Presence-участников этого соединения.
+  /// Повторный вызов для уже удалённого attachment считается успешным.
+  pub(super) fn detach(&mut self, command: DetachCommand) -> Result<CommittedChannelTransition, ChannelStateStoreError> {
+    if command.channel.application_id != command.actor.application_id {
+      return Err(ChannelStateStoreError::InvalidRequest {
+        message: "channel and connection belong to different applications".to_owned(),
+      });
+    }
+
+    let connection_key = ConnectionKey::from(&command.actor);
+    let channel = command.channel;
+
+    let outcome = match self.channels.get_mut(&channel) {
+      Some(channel_state) => channel_state.detach_individual(&command.actor)?,
+      None => IndividualDetachOutcome::NotAttached {
+        occupancy_version: 0,
+      },
+    };
+
+    self.remove_connection_channel(&connection_key, &channel);
+
+    match outcome {
+      IndividualDetachOutcome::NotAttached { occupancy_version } => {
+        Ok(CommittedChannelTransition {
+          presence_revision: None,
+          occupancy_version,
+          event: None,
+        })
+      }
+      IndividualDetachOutcome::Detached {
+        removed_members,
+        presence_revision,
+        occupancy_version,
+        occupancy_change,
+      } => {
+        let event_id = Uuid::new_v4();
+
+        let member_changes = removed_members
+          .into_iter()
+          .enumerate()
+          .map(|(index, member)| PresenceMemberChange {
+            action: PresenceChangeAction::Leave,
+            connection_id: member.connection_id,
+            client_id: member.client_id,
+            data: member.data,
+            message_id: format!("server:{event_id}:{index}"),
+            timestamp: command.request_time,
+          })
+          .collect();
+
+        let event = CommittedPresenceEvent::new(
+          event_id,
+          PresenceChannelChanged {
+            channel,
+            origin: command.actor.node_instance,
+            presence_revision,
+            occupancy_version,
+            member_changes,
+            occupancy: Some(occupancy_change),
+            occurred_at: command.request_time,
+          },
+        );
+
+        Ok(CommittedChannelTransition {
+          presence_revision,
+          occupancy_version,
+          event: Some(event),
+        })
+      }
+    }
+  }
+
+  /// Удаляет связь соединения с каналом из обратного индекса.
+  fn remove_connection_channel(&mut self, connection: &ConnectionKey, channel: &ChannelKey) {
+    let remove_connection = self
+      .connection_channels
+      .get_mut(connection)
+      .is_some_and(|channels| {
+        channels.remove(channel);
+        channels.is_empty()
+      });
+
+    if remove_connection {
+      self.connection_channels.remove(connection);
+    }
+  }
+
 }
