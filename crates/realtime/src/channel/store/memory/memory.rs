@@ -1,23 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use tokio::sync::Mutex;
-use support::NodeInstance;
-use crate::{ApplicationId, Attachment, ChannelKey, ConnectionId, PresenceMember, PresenceMutationOutcome};
+
+use super::channel_state::ChannelState;
+use crate::{ApplicationId, ChannelKey, ConnectionId, PresenceMutationOutcome};
 
 /// Соединение в пределах приложения.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ConnectionKey {
   application_id: ApplicationId,
   connection_id: ConnectionId,
-}
-
-/// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
-#[derive(Clone, Debug)]
-struct StoredOccupancyShard {
-  /// Последняя принятая версия счётчиков.
-  version: u64,
-  connections: u64,
-  subscribers: u64,
-  presence_subscribers: u64,
 }
 
 /// Сохранённый результат обработанной Presence-команды.
@@ -28,24 +19,6 @@ struct PresenceOperationRecord {
 
   /// Результат, который необходимо вернуть при повторе команды.
   outcome: PresenceMutationOutcome,
-}
-
-#[derive(Default)]
-struct ChannelState {
-  /// Активные записи присоединения к каналам по идентификатору соединения.
-  attachments: HashMap<ConnectionId, Attachment>,
-
-  /// Участники Presence, сгруппированные по соединению и `client_id`.
-  members: HashMap<ConnectionId, HashMap<String, PresenceMember>>,
-
-  /// Последние абсолютные счётчики Occupancy каждого экземпляра ноды.
-  occupancy_shards: HashMap<NodeInstance, StoredOccupancyShard>,
-
-  /// Текущая ревизия списка участников Presence.
-  presence_revision: u64,
-
-  /// Текущая версия метрик Occupancy.
-  occupancy_version: u64,
 }
 
 /// Состояние локального хранилища каналов.

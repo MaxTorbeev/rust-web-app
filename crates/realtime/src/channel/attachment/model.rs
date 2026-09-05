@@ -10,3 +10,10 @@ pub struct Attachment {
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
 }
+
+impl Attachment {
+  /// Проверяет, включён ли ChannelMode для этого присоединения.
+  pub fn has_mode(&self, mode: ChannelMode) -> bool {
+    self.effective_modes.contains(&mode)
+  }
+}

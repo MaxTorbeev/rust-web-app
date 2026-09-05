@@ -1,4 +1,5 @@
 mod error;
-pub mod memory;
+mod memory;
 pub mod redis;
 pub use error::*;
+pub use memory::*;
