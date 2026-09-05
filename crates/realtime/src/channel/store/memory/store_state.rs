@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use super::channel_state::{ChannelState, IndividualDetachOutcome};
 use crate::{ApplicationId, AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, DetachCommand, PresenceChangeAction, PresenceChannelChanged, PresenceMemberChange, PresenceMutationOutcome, PresenceSnapshot};
-use crate::connection::ConnectionActor;
+use crate::connection::{ConnectionActor, DisconnectConnectionCommand};
 
 /// Сохранённый результат обработанной Presence-команды.
 #[derive(Clone, Debug)]
@@ -192,6 +192,57 @@ impl MemoryStoreState {
         })
       }
     }
+  }
+
+  /// Удаляет соединение из всех его каналов и очищает журнал Presence.
+  ///
+  /// Все каналы проверяются до первого изменения состояния.
+  /// Повторное отключение возвращает пустой список переходов.
+  pub(super) fn disconnect(
+    &mut self,
+    command: DisconnectConnectionCommand,
+  ) -> Result<Vec<CommittedChannelTransition>, ChannelStateStoreError> {
+    let connection_key = ConnectionKey::from(&command.actor);
+
+    // Копируем ключи: detach будет изменять обратный индекс.
+    let mut channels = self
+      .connection_channels
+      .get(&connection_key)
+      .map(|channels| channels.iter().cloned().collect::<Vec<_>>())
+      .unwrap_or_default();
+
+    channels.sort_by(|left, right| left.channel.cmp(&right.channel));
+
+    // Проверяем все каналы до удаления первого attachment.
+    for channel in &channels {
+      if channel.application_id != command.actor.application_id {
+        return Err(ChannelStateStoreError::InvalidRequest {
+          message: "channel and connection belong to different applications"
+            .to_owned(),
+        });
+      }
+
+      if let Some(state) = self.channels.get(channel) {
+        state.check_individual_detach(&command.actor)?;
+      }
+    }
+
+    let mut transitions = Vec::with_capacity(channels.len());
+
+    for channel in channels {
+      let transition = self.detach(DetachCommand {
+        channel,
+        actor: command.actor.clone(),
+        request_time: command.request_time,
+      })?;
+
+      transitions.push(transition);
+    }
+
+    self.connection_channels.remove(&connection_key);
+    self.presence_operations.remove(&connection_key);
+
+    Ok(transitions)
   }
 
   /// Удаляет связь соединения с каналом из обратного индекса.

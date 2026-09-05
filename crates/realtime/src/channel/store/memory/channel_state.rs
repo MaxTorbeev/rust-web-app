@@ -1,8 +1,6 @@
 use std::collections::HashMap;
-use uuid::Uuid;
 use support::NodeInstance;
-use crate::{Attachment, AttachmentTracking, ChannelKey, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, DetachCommand, OccupancyChange, OccupancyMetrics, PresenceChangeAction, PresenceChannelChanged, PresenceMember, PresenceMemberChange, PresenceSnapshot};
-use crate::channel::store::memory::store_state::ConnectionKey;
+use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 
 /// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
@@ -147,14 +145,72 @@ impl ChannelState {
     Ok(change)
   }
 
-  pub(super) fn detach_individual(
-    &mut self,
-    actor: &ConnectionActor,
-  ) -> Result<IndividualDetachOutcome, ChannelStateStoreError> {
+  pub(super) fn detach_individual(&mut self, actor: &ConnectionActor) -> Result<IndividualDetachOutcome, ChannelStateStoreError> {
+    // Находим attachment; его отсутствие означает успешный detach без изменений.
     let Some(attachment) = self.attachments.get(&actor.connection_id) else {
       return Ok(IndividualDetachOutcome::NotAttached {
         occupancy_version: self.occupancy_version,
       });
+    };
+
+    // Проверяем принадлежность attachment экземпляру ноды и индивидуальный учёт.
+    Self::validate_individual_detach(attachment, actor)?;
+
+    // Определяем, затронет ли detach список участников Presence.
+    let has_members = self
+      .members
+      .get(&actor.connection_id)
+      .is_some_and(|members| !members.is_empty());
+
+    // Готовим новую ревизию Presence только при наличии участников для удаления.
+    // Обе версии проверяем на переполнение до изменения состояния.
+    let next_presence_revision = if has_members {
+      Some(self.next_presence_revision()?)
+    } else {
+      None
+    };
+    // Удаление индивидуального attachment всегда меняет Occupancy.
+    let next_occupancy_version = self.next_occupancy_version()?;
+
+    // Сохраняем метрики до удаления для расчёта изменения Occupancy.
+    let before = self.occupancy();
+
+    // Отсоединяем соединение от канала.
+    self.attachments.remove(&actor.connection_id);
+    // Удаляем всех Presence-участников соединения в детерминированном порядке.
+    let removed_members = self.remove_members(&actor.connection_id);
+
+    // Фиксируем ревизию изменённого списка участников Presence.
+    if let Some(revision) = next_presence_revision {
+      self.presence_revision = revision;
+    }
+    // Фиксируем новую версию метрик Occupancy.
+    self.occupancy_version = next_occupancy_version;
+
+    // Рассчитываем метрики после удаления и изменение Occupancy.
+    let after = self.occupancy();
+    let occupancy_change = OccupancyChange::between(before, after)
+      .expect("removing an individual attachment must change occupancy");
+
+    // Возвращаем изменения канала для формирования события detach.
+    Ok(IndividualDetachOutcome::Detached {
+      removed_members,
+      presence_revision: next_presence_revision,
+      occupancy_version: next_occupancy_version,
+      occupancy_change,
+    })
+  }
+
+
+  /// Проверяет, что индивидуальный detach можно выполнить без ошибки.
+  ///
+  /// Используется перед отключением соединения сразу от нескольких каналов.
+  pub(super) fn check_individual_detach(
+    &self,
+    actor: &ConnectionActor,
+  ) -> Result<(), ChannelStateStoreError> {
+    let Some(attachment) = self.attachments.get(&actor.connection_id) else {
+      return Ok(());
     };
 
     Self::validate_individual_detach(attachment, actor)?;
@@ -164,34 +220,13 @@ impl ChannelState {
       .get(&actor.connection_id)
       .is_some_and(|members| !members.is_empty());
 
-    // Обе версии проверяем до изменения состояния.
-    let next_presence_revision = if has_members {
-      Some(self.next_presence_revision()?)
-    } else {
-      None
-    };
-    let next_occupancy_version = self.next_occupancy_version()?;
-
-    let before = self.occupancy();
-
-    self.attachments.remove(&actor.connection_id);
-    let removed_members = self.remove_members(&actor.connection_id);
-
-    if let Some(revision) = next_presence_revision {
-      self.presence_revision = revision;
+    if has_members {
+      self.next_presence_revision()?;
     }
-    self.occupancy_version = next_occupancy_version;
 
-    let after = self.occupancy();
-    let occupancy_change = OccupancyChange::between(before, after)
-      .expect("removing an individual attachment must change occupancy");
+    self.next_occupancy_version()?;
 
-    Ok(IndividualDetachOutcome::Detached {
-      removed_members,
-      presence_revision: next_presence_revision,
-      occupancy_version: next_occupancy_version,
-      occupancy_change,
-    })
+    Ok(())
   }
 
   fn validate_individual_detach(attachment: &Attachment, actor: &ConnectionActor) -> Result<(), ChannelStateStoreError> {
