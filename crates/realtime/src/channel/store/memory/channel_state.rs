@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use support::NodeInstance;
-use crate::{Attachment, AttachmentAccounting, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
+use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 
 /// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
@@ -58,7 +58,7 @@ impl ChannelState {
 
     for attachment in self.attachments.values() {
       // Предотвратить двойной подсчёт агрегированного attachment.
-      if attachment.accounting == AttachmentAccounting::Aggregated {
+      if attachment.accounting == AttachmentTracking::Aggregated {
         continue;
       }
 

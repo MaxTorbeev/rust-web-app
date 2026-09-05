@@ -1,6 +1,6 @@
 /// Способ учёта Attachment в состоянии канала.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AttachmentAccounting {
+pub enum AttachmentTracking {
   /// Attachment сохраняется как отдельная запись и самостоятельно
   /// участвует в расчёте Occupancy канала.
   Individual,

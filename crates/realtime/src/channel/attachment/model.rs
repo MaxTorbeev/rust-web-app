@@ -1,4 +1,4 @@
-use crate::{AttachmentAccounting, ChannelMode, ConnectionId, OccupancySubscription};
+use crate::{AttachmentTracking, ChannelMode, ConnectionId, OccupancySubscription};
 use support::NodeInstance;
 
 /// Запись о том, что Realtime-соединение присоединено к каналу,
@@ -8,7 +8,7 @@ pub struct Attachment {
   pub connection_id: ConnectionId,
   /// Экземпляр ноды, обслуживающий соединение.
   pub node_instance: NodeInstance,
-  pub accounting: AttachmentAccounting,
+  pub accounting: AttachmentTracking,
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,
 }
@@ -20,10 +20,10 @@ impl Attachment {
   }
 
   pub const fn is_individual(&self) -> bool {
-    matches!(self.accounting, AttachmentAccounting::Individual)
+    matches!(self.accounting, AttachmentTracking::Individual)
   }
 
   pub const fn is_aggregated(&self) -> bool {
-    matches!(self.accounting, AttachmentAccounting::Aggregated)
+    matches!(self.accounting, AttachmentTracking::Aggregated)
   }
 }

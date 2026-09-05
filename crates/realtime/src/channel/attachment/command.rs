@@ -1,5 +1,5 @@
 use crate::connection::ConnectionActor;
-use crate::{Attachment, AttachmentAccounting, ChannelKey, ChannelMode, OccupancySubscription};
+use crate::{Attachment, AttachmentTracking, ChannelKey, ChannelMode, OccupancySubscription};
 use support::timestamp::Timestamp;
 
 /// Команда на начало работы соединения с каналом.
@@ -8,7 +8,7 @@ pub struct AttachCommand {
   pub channel: ChannelKey,
   pub actor: ConnectionActor,
   /// Способ хранения и учёта attachment.
-  pub accounting: AttachmentAccounting,
+  pub accounting: AttachmentTracking,
   /// Effective (server calculated) modes and requested occupancy subscription.
   pub effective_modes: Vec<ChannelMode>,
   pub occupancy: Option<OccupancySubscription>,

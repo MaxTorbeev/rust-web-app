@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use super::channel_state::ChannelState;
-use crate::{ApplicationId, AttachCommand, AttachmentAccounting, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, PresenceChannelChanged, PresenceMutationOutcome, PresenceSnapshot};
+use crate::{ApplicationId, AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, PresenceChannelChanged, PresenceMutationOutcome, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 
 /// Сохранённый результат обработанной Presence-команды.
@@ -59,7 +59,7 @@ impl MemoryStoreState {
     &mut self,
     command: AttachCommand,
   ) -> Result<ChannelAttachOutcome, ChannelStateStoreError> {
-    if command.accounting != AttachmentAccounting::Individual {
+    if command.accounting != AttachmentTracking::Individual {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "individual attachment accounting is required".to_owned(),
       });
