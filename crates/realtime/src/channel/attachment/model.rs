@@ -18,4 +18,12 @@ impl Attachment {
   pub fn has_mode(&self, mode: ChannelMode) -> bool {
     self.effective_modes.contains(&mode)
   }
+
+  pub const fn is_exact(&self) -> bool {
+    matches!(self.accounting, AttachmentAccounting::Exact)
+  }
+
+  pub const fn is_aggregated(&self) -> bool {
+    matches!(self.accounting, AttachmentAccounting::Aggregated)
+  }
 }

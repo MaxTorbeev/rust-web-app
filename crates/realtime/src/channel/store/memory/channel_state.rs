@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use support::NodeInstance;
 use crate::{Attachment, AttachmentAccounting, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
+use crate::connection::ConnectionActor;
 
 /// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
 #[derive(Clone, Debug)]
@@ -29,6 +30,14 @@ pub(super) struct ChannelState {
 
   /// Текущая версия метрик Occupancy.
   occupancy_version: u64,
+}
+
+/// Измененные состояния канала после удаления Exact attachment.
+pub(super) struct ExactDetachOutcome {
+  pub(super) removed_members: Vec<PresenceMember>,
+  pub(super) presence_revision: Option<u64>,
+  pub(super) occupancy_version: u64,
+  pub(super) occupancy_change: OccupancyChange,
 }
 
 impl ChannelState {
@@ -125,6 +134,89 @@ impl ChannelState {
     }
 
     Ok(change)
+  }
+
+  pub(super) fn detach_exact(
+    &mut self,
+    actor: &ConnectionActor,
+  ) -> Result<Option<ExactDetachOutcome>, ChannelStateStoreError> {
+    let Some(attachment) = self.attachments.get(&actor.connection_id) else {
+      // Если attachment отсутствует, возвращается Ok(None)
+      return Ok(None);
+    };
+
+    if attachment.node_instance != actor.node_instance {
+      return Err(ChannelStateStoreError::Conflict {
+        message: format!(
+          "attachment {} belongs to another node instance",
+          actor.connection_id.as_str(),
+        ),
+      });
+    }
+
+    if !attachment.is_exact() {
+      return Err(ChannelStateStoreError::Internal {
+        message: "aggregated attachment cannot be removed as exact".to_owned(),
+      });
+    }
+
+    let has_members = self
+      .members
+      .get(&actor.connection_id)
+      .is_some_and(|members| !members.is_empty());
+
+    // Обе версии проверяем до изменения состояния.
+    let next_presence_revision = if has_members {
+      Some(
+        self
+          .presence_revision
+          .checked_add(1)
+          .ok_or_else(|| ChannelStateStoreError::Internal {
+            message: "presence revision overflow".to_owned(),
+          })?,
+      )
+    } else {
+      None
+    };
+
+    let next_occupancy_version = self
+      .occupancy_version
+      .checked_add(1)
+      .ok_or_else(|| ChannelStateStoreError::Internal {
+        message: "occupancy version overflow".to_owned(),
+      })?;
+
+    let before = self.occupancy();
+
+    self.attachments.remove(&actor.connection_id);
+
+    let mut removed_members = self
+      .members
+      .remove(&actor.connection_id)
+      .unwrap_or_default()
+      .into_values()
+      .collect::<Vec<_>>();
+
+    // HashMap не гарантирует порядок. Событие должно быть детерминированным.
+    removed_members.sort_by(|left, right| left.client_id.cmp(&right.client_id));
+
+    if let Some(revision) = next_presence_revision {
+      self.presence_revision = revision;
+    }
+
+    self.occupancy_version = next_occupancy_version;
+
+    let after = self.occupancy();
+
+    let occupancy_change = OccupancyChange::between(before, after)
+      .expect("removing an exact attachment must change occupancy");
+
+    Ok(Some(ExactDetachOutcome {
+      removed_members,
+      presence_revision: next_presence_revision,
+      occupancy_version: next_occupancy_version,
+      occupancy_change,
+    }))
   }
 
   fn validate_attachment(&self, attachment: &Attachment) -> Result<(), ChannelStateStoreError> {
