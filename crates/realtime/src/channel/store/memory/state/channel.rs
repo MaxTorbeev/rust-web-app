@@ -1,17 +1,8 @@
 use std::collections::HashMap;
 use support::NodeInstance;
-use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceMember, PresenceSnapshot};
+use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, OccupancyShardBaseline, PresenceMember, PresenceSnapshot};
 use crate::connection::ConnectionActor;
-
-/// Актуальные счётчики Occupancy, сохранённые для экземпляра ноды.
-#[derive(Clone, Debug)]
-struct StoredOccupancyShard {
-  /// Последняя принятая версия счётчиков.
-  version: u64,
-  connections: u64,
-  subscribers: u64,
-  presence_subscribers: u64,
-}
+use super::IndividualDetachOutcome;
 
 /// Внутреннее состояние одного канала в локальном хранилище.
 #[derive(Default)]
@@ -23,26 +14,13 @@ pub(super) struct ChannelState {
   members: HashMap<ConnectionId, HashMap<String, PresenceMember>>,
 
   /// Последние абсолютные счётчики Occupancy каждого экземпляра ноды.
-  occupancy_shards: HashMap<NodeInstance, StoredOccupancyShard>,
+  occupancy_shards: HashMap<NodeInstance, OccupancyShardBaseline>,
 
   /// Текущая ревизия списка участников Presence.
   presence_revision: u64,
 
   /// Текущая версия метрик Occupancy.
   occupancy_version: u64,
-}
-
-/// Результат удаления индивидуального attachment.
-pub(super) enum IndividualDetachOutcome {
-  NotAttached {
-    occupancy_version: u64,
-  },
-  Detached {
-    removed_members: Vec<PresenceMember>,
-    presence_revision: Option<u64>,
-    occupancy_version: u64,
-    occupancy_change: OccupancyChange,
-  },
 }
 
 impl ChannelState {

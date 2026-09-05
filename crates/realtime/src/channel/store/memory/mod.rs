@@ -1,5 +1,4 @@
 mod memory;
-mod channel_state;
-mod store_state;
+mod state;
 
 pub use memory::*;

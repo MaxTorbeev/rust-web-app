@@ -1,29 +1,14 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
-use super::channel_state::{ChannelState, IndividualDetachOutcome};
-use crate::{ApplicationId, AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, DetachCommand, PresenceChangeAction, PresenceChannelChanged, PresenceMemberChange, PresenceMutationOutcome, PresenceSnapshot};
-use crate::connection::{ConnectionActor, DisconnectConnectionCommand};
-
-/// Сохранённый результат обработанной Presence-команды.
-#[derive(Clone, Debug)]
-struct PresenceOperationRecord {
-  /// Хеш содержимого первоначальной команды.
-  request_fingerprint: String,
-
-  /// Результат, который необходимо вернуть при повторе команды.
-  outcome: PresenceMutationOutcome,
-}
-
-/// Соединение в пределах приложения.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub(super) struct ConnectionKey {
-  application_id: ApplicationId,
-  connection_id: ConnectionId,
-}
+use super::channel::ChannelState;
+use super::IndividualDetachOutcome;
+use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, PresenceChangeAction, PresenceChannelChanged, PresenceMemberChange, PresenceSnapshot};
+use crate::channel::presence::PresenceOperationRecord;
+use crate::connection::{ConnectionKey, DisconnectConnectionCommand};
 
 /// Состояние локального хранилища каналов.
 #[derive(Default)]
-pub(super) struct MemoryStoreState {
+pub struct MemoryStoreState {
   /// Состояние каналов.
   channels: HashMap<ChannelKey, ChannelState>,
 
@@ -35,19 +20,10 @@ pub(super) struct MemoryStoreState {
   presence_operations: HashMap<ConnectionKey, HashMap<u64, PresenceOperationRecord>>,
 }
 
-impl From<&ConnectionActor> for ConnectionKey {
-  fn from(actor: &ConnectionActor) -> Self {
-    Self {
-      application_id: actor.application_id.clone(),
-      connection_id: actor.connection_id.clone(),
-    }
-  }
-}
-
 impl MemoryStoreState {
 
   /// Возвращает snapshot канала, не изменяя состояние хранилища.
-  pub(super) fn channel_snapshot(&self, channel: &ChannelKey) -> PresenceSnapshot {
+  pub fn channel_snapshot(&self, channel: &ChannelKey) -> PresenceSnapshot {
     self
       .channels
       .get(channel)
@@ -124,7 +100,7 @@ impl MemoryStoreState {
   ///
   /// Вместе с attachment удаляет всех Presence-участников этого соединения.
   /// Повторный вызов для уже удалённого attachment считается успешным.
-  pub(super) fn detach(&mut self, command: DetachCommand) -> Result<CommittedChannelTransition, ChannelStateStoreError> {
+  pub fn detach(&mut self, command: DetachCommand) -> Result<CommittedChannelTransition, ChannelStateStoreError> {
     if !command.channel.belongs_to_application(&command.actor.application_id) {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "channel and connection belong to different applications".to_owned(),
@@ -198,7 +174,7 @@ impl MemoryStoreState {
   ///
   /// Все каналы проверяются до первого изменения состояния.
   /// Повторное отключение возвращает пустой список переходов.
-  pub(super) fn disconnect(
+  pub fn disconnect(
     &mut self,
     command: DisconnectConnectionCommand,
   ) -> Result<Vec<CommittedChannelTransition>, ChannelStateStoreError> {

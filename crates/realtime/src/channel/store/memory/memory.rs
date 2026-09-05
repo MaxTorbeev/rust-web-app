@@ -1,5 +1,5 @@
 use tokio::sync::Mutex;
-use super::store_state::MemoryStoreState;
+use super::state::MemoryStoreState;
 
 /// Локальное хранилище состояния каналов.
 pub struct MemoryChannelStore {
