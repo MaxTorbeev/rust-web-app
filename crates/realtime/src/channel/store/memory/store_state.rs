@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;
 use super::channel_state::ChannelState;
-use crate::{ApplicationId, AttachCommand, Attachment, AttachmentAccounting, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, PresenceChannelChanged, PresenceMutationOutcome, PresenceSnapshot};
+use crate::{ApplicationId, AttachCommand, AttachmentAccounting, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, ConnectionId, PresenceChannelChanged, PresenceMutationOutcome, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 
 /// Сохранённый результат обработанной Presence-команды.
@@ -55,13 +55,19 @@ impl MemoryStoreState {
       .unwrap_or_else(|| ChannelState::default().snapshot())
   }
 
-  pub(super) fn attach_exact_and_snapshot(
+  fn attach_exact(
     &mut self,
     command: AttachCommand,
   ) -> Result<ChannelAttachOutcome, ChannelStateStoreError> {
     if command.accounting != AttachmentAccounting::Exact {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "exact attachment accounting is required".to_owned(),
+      });
+    }
+
+    if command.channel.application_id != command.actor.application_id {
+      return Err(ChannelStateStoreError::InvalidRequest {
+        message: "channel and connection belong to different applications".to_owned(),
       });
     }
 
