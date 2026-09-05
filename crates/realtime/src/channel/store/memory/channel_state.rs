@@ -32,8 +32,8 @@ pub(super) struct ChannelState {
   occupancy_version: u64,
 }
 
-/// Измененные состояния канала после удаления Exact attachment.
-pub(super) struct ExactDetachOutcome {
+/// Измененные состояния канала после удаления индивидуального attachment.
+pub(super) struct IndividualDetachOutcome {
   pub(super) removed_members: Vec<PresenceMember>,
   pub(super) presence_revision: Option<u64>,
   pub(super) occupancy_version: u64,
@@ -136,10 +136,10 @@ impl ChannelState {
     Ok(change)
   }
 
-  pub(super) fn detach_exact(
+  pub(super) fn detach_individual(
     &mut self,
     actor: &ConnectionActor,
-  ) -> Result<Option<ExactDetachOutcome>, ChannelStateStoreError> {
+  ) -> Result<Option<IndividualDetachOutcome>, ChannelStateStoreError> {
     let Some(attachment) = self.attachments.get(&actor.connection_id) else {
       // Если attachment отсутствует, возвращается Ok(None)
       return Ok(None);
@@ -154,9 +154,9 @@ impl ChannelState {
       });
     }
 
-    if !attachment.is_exact() {
+    if !attachment.is_individual() {
       return Err(ChannelStateStoreError::Internal {
-        message: "aggregated attachment cannot be removed as exact".to_owned(),
+        message: "aggregated attachment cannot be removed as individual".to_owned(),
       });
     }
 
@@ -209,9 +209,9 @@ impl ChannelState {
     let after = self.occupancy();
 
     let occupancy_change = OccupancyChange::between(before, after)
-      .expect("removing an exact attachment must change occupancy");
+      .expect("removing an individual attachment must change occupancy");
 
-    Ok(Some(ExactDetachOutcome {
+    Ok(Some(IndividualDetachOutcome {
       removed_members,
       presence_revision: next_presence_revision,
       occupancy_version: next_occupancy_version,

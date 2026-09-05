@@ -19,8 +19,8 @@ impl Attachment {
     self.effective_modes.contains(&mode)
   }
 
-  pub const fn is_exact(&self) -> bool {
-    matches!(self.accounting, AttachmentAccounting::Exact)
+  pub const fn is_individual(&self) -> bool {
+    matches!(self.accounting, AttachmentAccounting::Individual)
   }
 
   pub const fn is_aggregated(&self) -> bool {

@@ -59,9 +59,9 @@ impl MemoryStoreState {
     &mut self,
     command: AttachCommand,
   ) -> Result<ChannelAttachOutcome, ChannelStateStoreError> {
-    if command.accounting != AttachmentAccounting::Exact {
+    if command.accounting != AttachmentAccounting::Individual {
       return Err(ChannelStateStoreError::InvalidRequest {
-        message: "exact attachment accounting is required".to_owned(),
+        message: "individual attachment accounting is required".to_owned(),
       });
     }
 
