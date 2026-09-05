@@ -36,3 +36,21 @@ pub struct PresenceMutationReceipt {
   /// `false`, если команда была обработана впервые.
   pub replayed: bool,
 }
+
+impl PresenceMutationReceipt {
+  /// Результат команды, обработанной впервые.
+  pub fn fresh(outcome: PresenceMutationOutcome) -> Self {
+    Self {
+      outcome,
+      replayed: false,
+    }
+  }
+
+  /// Результат, загруженный из журнала ранее обработанных операций.
+  pub fn replayed(outcome: PresenceMutationOutcome) -> Self {
+    Self {
+      outcome,
+      replayed: true,
+    }
+  }
+}

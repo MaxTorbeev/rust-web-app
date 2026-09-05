@@ -190,7 +190,7 @@ AttachmentService / PresenceService
       v
 AttachmentStore / PresenceStore + ChannelCommitDelivery
       |
-      +-- memory commit --> LocalChannelCommitDelivery
+      +-- memory commit --> InProcessChannelCommitDelivery
       |                         |
       |                         v
       |                 local channel projector
@@ -400,7 +400,7 @@ trait ChannelCommitDelivery {
 }
 ```
 
-`LocalChannelCommitDelivery` требует canonical event в committed transition и
+`InProcessChannelCommitDelivery` требует canonical event в committed transition и
 синхронно передаёт его в local projector. `RedisOutboxChannelCommitDelivery`
 принимает receipt атомарного store commit, который по контракту уже означает
 запись event в outbox, и не публикует его отдельно. Ошибка local delivery не
@@ -470,6 +470,31 @@ connection-а. Пока connection жив, TTL ledger продлевается �
 и не может истечь. Disconnect и reaper помечают ledger закрытым, но удаляют его
 только после safety TTL, не меньшего максимального поддерживаемого окна
 retry/resume. Иначе поздний повтор того же `msgSerial` создаст новую revision.
+
+Закрытый ledger доступен только для чтения. Повтор известного `msgSerial`
+возвращает прежний outcome и прежний `event_id`; неизвестный `msgSerial`
+получает `ConnectionClosed` и не становится новой операцией. `ATTACH` тем же
+`connection_id` при закрытом ledger является conflict хранилища: завершённый
+connection не начинает новый жизненный цикл, пока его ledger не удалён.
+`ConflictingReplay` и `ConnectionClosed` описывают состояние ledger, а не
+результат операции, поэтому в ledger не записываются и не затирают исходную
+запись. Повторный disconnect не сдвигает момент закрытия и не продлевает TTL.
+
+Открытый ledger ограничен по размеру: хранятся последние
+`presence_ledger_capacity` операций соединения (настройка приложения) и
+наибольший виденный `msgSerial`. Повтор `msgSerial`, вытесненного из окна,
+получает `StaleOperation` и не становится новой операцией; пропуски внутри окна
+вытеснением не считаются. Так память одного соединения ограничена
+`capacity × max payload`, а не числом уникальных `msgSerial`, которые пришлёт
+клиент.
+
+В memory-режиме ledger закрывается в `disconnect`; retention закрытого ledger
+равен `connection_state_ttl` — окну восстановления соединения. Очистка
+истёкших ledger выполняется при каждом `disconnect` (закрытые ledger появляются
+только там, поэтому их число ограничено отключениями за окно retention без
+фонового таймера) и дополнительно доступна как `sweep_presence_ledgers(now)`.
+Гарантия дедупликации действует только внутри retention; за его пределами
+connection не должен приниматься transport-ом.
 
 `attach_and_snapshot` при повторном attach не увеличивает counters. Он атомарно
 возвращает свежий snapshot и текущие Presence/Occupancy versions, чтобы повторный

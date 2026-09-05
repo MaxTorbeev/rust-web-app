@@ -1,4 +1,4 @@
-use crate::{ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection, ConnectionCleanupError, PresenceService};
+use crate::{ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection, ConnectionCleanupError, InProcessChannelCommitDelivery, MemoryChannelStore, PresenceLedgerPolicy, PresenceService};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 use support::NodeInstance;
@@ -17,7 +17,40 @@ pub struct RealtimeApplication {
 }
 
 impl RealtimeApplication {
+  /// Создаёт приложение в автономном режиме: локальное хранилище состояния
+  /// каналов и синхронная доставка переходов в локальный `ChannelRouter`.
+  ///
+  /// Ограничения журнала Presence-операций берутся из настроек по умолчанию;
+  /// изменение `settings` после создания на уже собранное хранилище не влияет.
   pub fn new(
+    id: ApplicationId,
+    node_instance: NodeInstance,
+    token_issuer: TokenAccessIssuer,
+    token_verifier: TokenAccessVerifier,
+  ) -> Self {
+    let settings = ApplicationSettings::default();
+    let router = Arc::new(ChannelRouter::new());
+    let store = Arc::new(MemoryChannelStore::with_ledger_policy(
+      PresenceLedgerPolicy::from_settings(&settings),
+    ));
+    let delivery = Arc::new(InProcessChannelCommitDelivery::new(router.clone()));
+
+    let attachments = AttachmentService::new(store.clone(), delivery.clone());
+    let presence = PresenceService::new(store, delivery);
+
+    Self::with_services(
+      id,
+      node_instance,
+      token_issuer,
+      token_verifier,
+      router,
+      attachments,
+      presence,
+    )
+  }
+
+  /// Создаёт приложение с внешне собранными хранилищем и доставкой.
+  pub fn with_services(
     id: ApplicationId,
     node_instance: NodeInstance,
     token_issuer: TokenAccessIssuer,
@@ -34,7 +67,7 @@ impl RealtimeApplication {
       settings: ApplicationSettings::default(),
       router,
       presence,
-      attachments
+      attachments,
     }
   }
 

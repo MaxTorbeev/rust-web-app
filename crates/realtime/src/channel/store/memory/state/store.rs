@@ -1,26 +1,45 @@
 use std::collections::{HashMap, HashSet};
+use support::timestamp::Timestamp;
 use uuid::Uuid;
 use super::channel::ChannelState;
 use super::IndividualDetachOutcome;
-use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, PresenceChannelChanged, PresenceSnapshot};
-use crate::channel::presence::PresenceOperationRecord;
+use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, PresenceBatchCommand, PresenceChannelChanged, PresenceMutationOutcome, PresenceMutationReceipt, PresenceRejection, PresenceSnapshot};
+use crate::channel::presence::{LedgerLookup, PresenceLedgerPolicy, PresenceOperationLedger, PresenceOperationRecord};
 use crate::connection::{ConnectionKey, DisconnectConnectionCommand};
 
 /// Состояние локального хранилища каналов.
-#[derive(Default)]
 pub struct MemoryStoreState {
+  /// Ограничения журналов Presence-операций.
+  ledger_policy: PresenceLedgerPolicy,
+
   /// Состояние каналов.
   channels: HashMap<ChannelKey, ChannelState>,
 
   /// Каналы, к которым присоединено каждое соединение.
   connection_channels: HashMap<ConnectionKey, HashSet<ChannelKey>>,
 
-  /// Результаты обработанных Presence-команд, сгруппированные
-  /// по соединению и `msg_serial`.
-  presence_operations: HashMap<ConnectionKey, HashMap<u64, PresenceOperationRecord>>,
+  /// Журналы обработанных Presence-команд каждого соединения.
+  ///
+  /// Журнал закрывается при disconnect и удаляется `sweep_presence_ledgers`
+  /// после истечения retention.
+  presence_ledgers: HashMap<ConnectionKey, PresenceOperationLedger>,
+}
+
+impl Default for MemoryStoreState {
+  fn default() -> Self {
+    Self::new(PresenceLedgerPolicy::default())
+  }
 }
 
 impl MemoryStoreState {
+  pub fn new(ledger_policy: PresenceLedgerPolicy) -> Self {
+    Self {
+      ledger_policy,
+      channels: HashMap::new(),
+      connection_channels: HashMap::new(),
+      presence_ledgers: HashMap::new(),
+    }
+  }
 
   /// Возвращает snapshot канала, не изменяя состояние хранилища.
   pub fn channel_snapshot(&self, channel: &ChannelKey) -> PresenceSnapshot {
@@ -31,7 +50,11 @@ impl MemoryStoreState {
       .unwrap_or_else(|| ChannelState::default().snapshot())
   }
 
-  fn attach_exact(
+  /// Сохраняет индивидуальный attachment и возвращает снимок канала.
+  ///
+  /// Повторный attach того же соединения идемпотентен: attachment
+  /// перезаписывается, счётчики не растут, возвращается свежий снимок.
+  pub fn attach(
     &mut self,
     command: AttachCommand,
   ) -> Result<ChannelAttachOutcome, ChannelStateStoreError> {
@@ -48,6 +71,22 @@ impl MemoryStoreState {
     }
 
     let connection_key = ConnectionKey::from(&command.actor);
+
+    // Соединение с закрытым журналом авторитетно завершено: его идентификатор
+    // не может начать новый жизненный цикл, пока журнал не очищен.
+    if self
+      .presence_ledgers
+      .get(&connection_key)
+      .is_some_and(PresenceOperationLedger::is_closed)
+    {
+      return Err(ChannelStateStoreError::Conflict {
+        message: format!(
+          "connection {} is closed and cannot attach",
+          command.actor.connection_id.as_str(),
+        ),
+      });
+    }
+
     let channel = command.channel.clone();
 
     let attachment = command.to_attachment();
@@ -167,9 +206,103 @@ impl MemoryStoreState {
     }
 
     self.connection_channels.remove(&connection_key);
-    self.presence_operations.remove(&connection_key);
+
+    // Журнал не удаляется: поздний повтор известной операции должен получить
+    // прежний результат, а неизвестной — отказ, а не стать новой операцией.
+    self
+      .ledger_entry(connection_key)
+      .close(command.request_time);
+
+    // Закрытые журналы появляются только здесь, поэтому попутная очистка
+    // ограничивает их число отключениями за окно retention без фонового таймера.
+    self.sweep_presence_ledgers(command.request_time);
 
     Ok(transitions)
+  }
+
+  fn ledger_entry(&mut self, connection_key: ConnectionKey) -> &mut PresenceOperationLedger {
+    let capacity = self.ledger_policy.capacity;
+
+    self
+      .presence_ledgers
+      .entry(connection_key)
+      .or_insert_with(|| PresenceOperationLedger::new(capacity))
+  }
+
+  /// Применяет клиентскую Presence-команду с дедупликацией по
+  /// `(application_id, connection_id, msg_serial)`.
+  ///
+  /// Поиск в журнале, выполнение и запись результата происходят в одной
+  /// критической секции. В журнал попадают оба доменных исхода — `Committed`
+  /// и `Rejected`; инфраструктурная ошибка не записывается, и повтор команды
+  /// выполняется заново. Отказы о состоянии журнала (`ConflictingReplay`,
+  /// `ConnectionClosed`) не записываются, чтобы не затирать исходную запись.
+  pub fn apply_presence(
+    &mut self,
+    command: PresenceBatchCommand,
+  ) -> Result<PresenceMutationReceipt, ChannelStateStoreError> {
+    let actor = &command.actor.connection_actor;
+
+    if !command.channel.belongs_to_application(&actor.application_id) {
+      return Err(ChannelStateStoreError::InvalidRequest {
+        message: "channel and connection belong to different applications".to_owned(),
+      });
+    }
+
+    let connection_key = ConnectionKey::from(actor);
+
+    if let Some(ledger) = self.presence_ledgers.get(&connection_key) {
+      match ledger.lookup(command.msg_serial, &command.request_fingerprint) {
+        LedgerLookup::Replay(outcome) => {
+          return Ok(PresenceMutationReceipt::replayed(outcome.clone()));
+        }
+        LedgerLookup::Conflict => {
+          return Ok(PresenceMutationReceipt::fresh(PresenceMutationOutcome::Rejected(
+            PresenceRejection::ConflictingReplay,
+          )));
+        }
+        LedgerLookup::Evicted => {
+          return Ok(PresenceMutationReceipt::fresh(PresenceMutationOutcome::Rejected(
+            PresenceRejection::StaleOperation,
+          )));
+        }
+        LedgerLookup::Closed => {
+          return Ok(PresenceMutationReceipt::fresh(PresenceMutationOutcome::Rejected(
+            PresenceRejection::ConnectionClosed,
+          )));
+        }
+        LedgerLookup::Miss => {}
+      }
+    }
+
+    let outcome = match self.channels.get_mut(&command.channel) {
+      Some(channel_state) => channel_state.apply_presence_batch(&command)?,
+      None => PresenceMutationOutcome::Rejected(PresenceRejection::NotAttached),
+    };
+
+    self.ledger_entry(connection_key).record(
+      command.msg_serial,
+      PresenceOperationRecord::new(command.request_fingerprint, outcome.clone()),
+    );
+
+    Ok(PresenceMutationReceipt::fresh(outcome))
+  }
+
+  /// Удаляет журналы соединений, закрытые раньше `now - retention`.
+  ///
+  /// Вызывается при каждом disconnect и может вызываться по таймеру.
+  /// Возвращает число удалённых журналов. Retention должен быть не меньше
+  /// максимального окна retry/resume: после удаления журнала store уже не
+  /// отличает поздний повтор от новой операции.
+  pub fn sweep_presence_ledgers(&mut self, now: Timestamp) -> usize {
+    let before = self.presence_ledgers.len();
+    let retention = self.ledger_policy.retention;
+
+    self
+      .presence_ledgers
+      .retain(|_, ledger| !ledger.is_expired(now, retention));
+
+    before - self.presence_ledgers.len()
   }
 
   /// Удаляет связь соединения с каналом из обратного индекса.

@@ -14,7 +14,7 @@ use event_bus::{
 };
 use futures_util::{SinkExt, StreamExt};
 use realtime::{
-  ApplicationId, Connection, ConnectionId, PresenceAction, ProtocolAction, ProtocolMessage,
+  ApplicationId, ChannelKey, Connection, ConnectionId, PresenceAction, ProtocolAction, ProtocolMessage,
   Realtime, RealtimeApplication, RealtimeConfig, WebsocketConnected, WebsocketDisconnected,
   register_event_handlers,
 };
@@ -300,13 +300,20 @@ impl TestSession {
   async fn is_attached(&self, channel: &str) -> bool {
     self
       .application
-      .channel_hub
+      .router()
       .is_attached(channel, &self.connection_id)
       .await
   }
 
   async fn presence_count(&self, channel: &str) -> usize {
-    self.application.presence_hub.snapshot(channel).await.len()
+    self
+      .application
+      .presence()
+      .snapshot(ChannelKey::new(self.application.id.clone(), channel))
+      .await
+      .expect("presence snapshot must be available")
+      .members
+      .len()
   }
 
   async fn receive(&mut self) -> ProtocolMessage {

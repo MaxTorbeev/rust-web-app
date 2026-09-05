@@ -8,6 +8,10 @@ pub struct ApplicationSettings {
   pub max_frame_size: u64,
   pub connection_state_ttl: u64,
   pub max_idle_interval: u64,
+
+  /// Число последних Presence-операций соединения, результаты которых
+  /// хранятся для дедупликации повторов.
+  pub presence_ledger_capacity: u64,
 }
 
 impl Default for ApplicationSettings {
@@ -19,6 +23,7 @@ impl Default for ApplicationSettings {
       max_frame_size: 1468006,
       connection_state_ttl: 120_000,
       max_idle_interval: 15_000,
+      presence_ledger_capacity: 256,
     }
   }
 }

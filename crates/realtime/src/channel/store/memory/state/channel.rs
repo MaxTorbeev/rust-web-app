@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use support::NodeInstance;
-use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, ConnectionId, OccupancyChange, OccupancyMetrics, OccupancyShardBaseline, PresenceMember, PresenceSnapshot};
+use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, ConnectionId, OccupancyChange, OccupancyMetrics, OccupancyShardBaseline, PresenceBatchCommand, PresenceMember, PresenceMutationOutcome, PresenceRejection, PresenceSnapshot};
 use crate::connection::ConnectionActor;
-use super::IndividualDetachOutcome;
+use super::{IndividualDetachOutcome, PresenceBatchPlan};
 
 /// Внутреннее состояние одного канала в локальном хранилище.
 #[derive(Default)]
@@ -123,6 +123,103 @@ impl ChannelState {
     Ok(change)
   }
 
+  /// Применяет batch клиентских Presence-действий одного соединения.
+  ///
+  /// Batch либо фиксируется целиком одной ревизией и одним событием, либо
+  /// отклоняется без изменений. Доменный отказ возвращается как
+  /// `Ok(Rejected)`, инфраструктурная ошибка — как `Err`.
+  pub(super) fn apply_presence_batch(
+    &mut self,
+    command: &PresenceBatchCommand,
+  ) -> Result<PresenceMutationOutcome, ChannelStateStoreError> {
+    if command.items.is_empty() {
+      return Err(ChannelStateStoreError::InvalidRequest {
+        message: "presence batch must contain at least one item".to_owned(),
+      });
+    }
+
+    let actor = &command.actor.connection_actor;
+
+    if let Err(rejection) = self.check_presence_attachment(actor)? {
+      return Ok(PresenceMutationOutcome::Rejected(rejection));
+    }
+
+    let current_members = self
+      .members
+      .get(&actor.connection_id)
+      .cloned()
+      .unwrap_or_default();
+    let current_count = current_members.len();
+
+    let plan = match PresenceBatchPlan::build(command, current_members, self.next_presence_revision()?) {
+      Ok(plan) => plan,
+      Err(rejection) => return Ok(PresenceMutationOutcome::Rejected(rejection)),
+    };
+
+    // Occupancy меняется только вместе с числом участников; переполнение
+    // проверяется до первого изменения состояния.
+    let next_occupancy_version = if plan.member_count() != current_count {
+      Some(self.next_occupancy_version()?)
+    } else {
+      None
+    };
+
+    Ok(PresenceMutationOutcome::Committed(
+      self.commit_presence_batch(command, plan, next_occupancy_version),
+    ))
+  }
+
+  /// Проверяет, что соединение может изменять Presence этого канала.
+  ///
+  /// Внешний `Err` — нарушение владения attachment (инфраструктура),
+  /// внутренний — доменный отказ клиенту.
+  fn check_presence_attachment(
+    &self,
+    actor: &ConnectionActor,
+  ) -> Result<Result<(), PresenceRejection>, ChannelStateStoreError> {
+    let Some(attachment) = self.attachments.get(&actor.connection_id) else {
+      return Ok(Err(PresenceRejection::NotAttached));
+    };
+
+    Self::validate_individual_detach(attachment, actor)?;
+
+    if !attachment.has_mode(ChannelMode::Presence) {
+      return Ok(Err(PresenceRejection::PresenceModeNotEnabled));
+    }
+
+    Ok(Ok(()))
+  }
+
+  /// Фиксирует проверенный план: участники, ревизии, Occupancy и событие.
+  ///
+  /// Все проверки уже выполнены; этот шаг не может завершиться ошибкой.
+  fn commit_presence_batch(
+    &mut self,
+    command: &PresenceBatchCommand,
+    plan: PresenceBatchPlan,
+    next_occupancy_version: Option<u64>,
+  ) -> CommittedChannelTransition {
+    let connection_id = &command.actor.connection_actor.connection_id;
+    let before = self.occupancy();
+    let (members, delta) = plan.into_parts();
+
+    if members.is_empty() {
+      self.members.remove(connection_id);
+    } else {
+      self.members.insert(connection_id.clone(), members);
+    }
+
+    self.presence_revision = delta.presence_revision();
+
+    if let Some(version) = next_occupancy_version {
+      self.occupancy_version = version;
+    }
+
+    let occupancy = OccupancyChange::between(before, self.occupancy());
+
+    delta.into_transition(command, self.occupancy_version, occupancy)
+  }
+
   pub(super) fn detach_individual(&mut self, actor: &ConnectionActor) -> Result<IndividualDetachOutcome, ChannelStateStoreError> {
     // Находим attachment; его отсутствие означает успешный detach без изменений.
     let Some(attachment) = self.attachments.get(&actor.connection_id) else {
@@ -166,9 +263,18 @@ impl ChannelState {
     self.occupancy_version = next_occupancy_version;
 
     // Рассчитываем метрики после удаления и изменение Occupancy.
+    // Удаление индивидуального attachment уменьшает `connections`, поэтому
+    // изменение есть всегда; его отсутствие — нарушение инварианта `occupancy()`.
+    // Состояние канала к этому моменту уже согласовано, теряется только событие.
     let after = self.occupancy();
-    let occupancy_change = OccupancyChange::between(before, after)
-      .expect("removing an individual attachment must change occupancy");
+    let occupancy_change = OccupancyChange::between(before, after).ok_or_else(|| {
+      ChannelStateStoreError::Internal {
+        message: format!(
+          "detaching individual attachment {} did not change occupancy",
+          actor.connection_id.as_str(),
+        ),
+      }
+    })?;
 
     // Возвращаем изменения канала для формирования события detach.
     Ok(IndividualDetachOutcome::Detached {

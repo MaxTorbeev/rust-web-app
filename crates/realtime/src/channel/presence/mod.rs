@@ -23,4 +23,4 @@ pub use rejection::*;
 pub use service::*;
 pub use snapshot::*;
 pub use store::*;
-pub(crate) use store::PresenceOperationRecord;
+pub(crate) use store::{LedgerLookup, PresenceOperationLedger, PresenceOperationRecord};
