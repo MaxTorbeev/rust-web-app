@@ -65,7 +65,7 @@ impl MemoryStoreState {
       });
     }
 
-    if command.channel.application_id != command.actor.application_id {
+    if !command.channel.belongs_to_application(&command.actor.application_id) {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "channel and connection belong to different applications".to_owned(),
       });
@@ -125,7 +125,7 @@ impl MemoryStoreState {
   /// Вместе с attachment удаляет всех Presence-участников этого соединения.
   /// Повторный вызов для уже удалённого attachment считается успешным.
   pub(super) fn detach(&mut self, command: DetachCommand) -> Result<CommittedChannelTransition, ChannelStateStoreError> {
-    if command.channel.application_id != command.actor.application_id {
+    if !command.channel.belongs_to_application(&command.actor.application_id) {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "channel and connection belong to different applications".to_owned(),
       });
@@ -215,7 +215,7 @@ impl MemoryStoreState {
 
     // Проверяем все каналы до удаления первого attachment.
     for channel in &channels {
-      if channel.application_id != command.actor.application_id {
+      if !channel.belongs_to_application(&command.actor.application_id) {
         return Err(ChannelStateStoreError::InvalidRequest {
           message: "channel and connection belong to different applications"
             .to_owned(),
