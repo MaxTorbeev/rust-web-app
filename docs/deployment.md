@@ -81,7 +81,9 @@ GitHub Actions выполняет deployment на один `DEPLOY_HOST`:
 3. Публикует image в GHCR.
 4. Загружает на сервер `compose.yml`, `.env`, frontend artifact и deployment
    scripts.
-5. При первом запуске создаёт стабильный `APP_NODE_ID` в `node.env`.
+5. При первом запуске создаёт стабильный `APP_NODE_ID` в `node.env`;
+   существующий файл только проверяет, а legacy-запись `REALTIME_NODE_ID`
+   переименовывает в `APP_NODE_ID`, сохраняя значение.
 6. Выполняет `docker compose pull` и `docker compose up`.
 7. Атомарно переключает symlink `frontend/current` на новый frontend release.
 
