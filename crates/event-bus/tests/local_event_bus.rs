@@ -138,6 +138,117 @@ async fn publish_builds_one_envelope_and_returns_its_id() {
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn publish_message_keeps_the_prepared_event_id() {
+  // Outbox scenario: the envelope was built (and stored) before publication,
+  // so its identifier must reach the transport untouched.
+  let distributed = Arc::new(RecordingPublisher::default());
+  let event_bus =
+    EventBus::with_distributed_publisher(Arc::new(EventDispatcher::new()), distributed.clone());
+
+  let event_id = Uuid::parse_str("6f1c2b2e-9c3a-4d77-8b0f-0a9a5b1c2d3e").unwrap();
+  let message = EventMessage::try_from_event_with_id(
+    event_id,
+    &DistributedEvent {
+      value: "stored".to_owned(),
+    },
+  )
+  .expect("envelope must build");
+
+  let receipt = event_bus
+    .publish_message(&message, DistributedEvent::DELIVERY)
+    .await
+    .expect("prepared message must publish");
+
+  assert_eq!(receipt.event_id, event_id);
+
+  let publications = distributed.publications();
+  assert_eq!(publications.len(), 1);
+
+  let (published, delivery) = &publications[0];
+  assert_eq!(*delivery, DeliveryClass::AllNodes);
+  assert_eq!(published, &message);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn republishing_the_same_message_is_the_same_event_for_consumers() {
+  // A retry after a failed publish must not look like a second event: the
+  // recorded publications share one identifier, unlike two `publish` calls.
+  let distributed = Arc::new(RecordingPublisher::default());
+  let event_bus =
+    EventBus::with_distributed_publisher(Arc::new(EventDispatcher::new()), distributed.clone());
+
+  let message = EventMessage::try_from_event(&DistributedEvent {
+    value: "retried".to_owned(),
+  })
+  .expect("envelope must build");
+
+  for _ in 0..2 {
+    event_bus
+      .publish_message(&message, DeliveryClass::AllNodes)
+      .await
+      .expect("prepared message must publish");
+  }
+
+  let ids: Vec<Uuid> = distributed
+    .publications()
+    .iter()
+    .map(|(message, _)| message.event_id())
+    .collect();
+
+  assert_eq!(ids, vec![message.event_id(), message.event_id()]);
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn publish_message_routes_by_the_given_delivery_class() {
+  // The envelope carries no delivery class; the caller's choice decides
+  // whether the local dispatcher or the distributed publisher receives it.
+  let received = Arc::new(Mutex::new(Vec::new()));
+  let handler_received = Arc::clone(&received);
+  let mut dispatcher = EventDispatcher::new();
+
+  dispatcher
+    .register(move |event: LocalEvent| {
+      let handler_received = Arc::clone(&handler_received);
+
+      async move {
+        handler_received
+          .lock()
+          .expect("received event lock must not be poisoned")
+          .push(event);
+
+        Ok(())
+      }
+    })
+    .expect("handler must register");
+
+  let distributed = Arc::new(RecordingPublisher::default());
+  let event_bus = EventBus::with_distributed_publisher(Arc::new(dispatcher), distributed.clone());
+
+  let message = EventMessage::try_from_event(&LocalEvent {
+    value: "local".to_owned(),
+  })
+  .expect("envelope must build");
+
+  event_bus
+    .publish_message(&message, DeliveryClass::LocalOnly)
+    .await
+    .expect("local-only message must publish");
+
+  assert_eq!(
+    *received
+      .lock()
+      .expect("received event lock must not be poisoned"),
+    vec![LocalEvent {
+      value: "local".to_owned(),
+    }],
+  );
+  assert!(
+    distributed.publications().is_empty(),
+    "local-only delivery must not reach the distributed publisher"
+  );
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn local_only_event_uses_local_publisher() {
   let received = Arc::new(Mutex::new(Vec::new()));
   let handler_received = Arc::clone(&received);
