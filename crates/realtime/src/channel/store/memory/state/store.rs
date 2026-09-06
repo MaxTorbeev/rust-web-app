@@ -89,14 +89,12 @@ impl MemoryStoreState {
 
     let channel = command.channel.clone();
 
-    let attachment = command.to_attachment();
-
     let channel_state = self
       .channels
       .entry(channel.clone())
       .or_default();
 
-    let occupancy_change = channel_state.save_attachment(attachment.clone())?;
+    let occupancy_change = channel_state.save_attachment(command.to_attachment())?;
 
     let snapshot = channel_state.snapshot();
 
@@ -129,10 +127,8 @@ impl MemoryStoreState {
       .insert(channel);
 
     Ok(ChannelAttachOutcome {
-      attachment,
       snapshot,
       transition,
-      occupancy_shard_baseline: None,
     })
   }
 
