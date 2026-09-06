@@ -5,6 +5,7 @@ use crate::{
   resolve_effective_modes,
 };
 use std::collections::BTreeMap;
+use support::fresh_uuid;
 use support::timestamp::Timestamp;
 
 pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Vec<ProtocolMessage> {
@@ -17,11 +18,8 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
 
   // Effective modes — пересечение запрошенных режимов и capability токена.
   // Пустое пересечение означает отсутствие доступа к каналу.
-  let effective_modes = resolve_effective_modes(
-    capability,
-    channel,
-    ProtocolFlag::from_wire(message.flags),
-  );
+  let effective_modes =
+    resolve_effective_modes(capability, channel, ProtocolFlag::from_wire(message.flags));
 
   if effective_modes.is_empty() {
     tracing::warn!(
@@ -73,6 +71,7 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
     effective_modes,
     occupancy,
     request_time: Timestamp::now(),
+    event_id: fresh_uuid(),
   };
 
   // Сначала фиксируем attachment в хранилище: снимок Presence должен

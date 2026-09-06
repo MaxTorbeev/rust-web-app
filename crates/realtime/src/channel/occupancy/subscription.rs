@@ -85,10 +85,15 @@ mod tests {
 
   #[test]
   fn parses_supported_values() {
-    assert_eq!(OccupancySubscription::parse("metrics"), Ok(OccupancySubscription::Metrics));
+    assert_eq!(
+      OccupancySubscription::parse("metrics"),
+      Ok(OccupancySubscription::Metrics)
+    );
     assert_eq!(
       OccupancySubscription::parse("metrics.presenceMembers"),
-      Ok(OccupancySubscription::Category(OccupancyCategory::PresenceMembers)),
+      Ok(OccupancySubscription::Category(
+        OccupancyCategory::PresenceMembers
+      )),
     );
     assert_eq!(
       OccupancySubscription::parse("metrics.subscribers, metrics.connections"),
@@ -109,7 +114,11 @@ mod tests {
 
   #[test]
   fn canonical_value_round_trips() {
-    for value in ["metrics", "metrics.publishers", "metrics.connections,metrics.subscribers"] {
+    for value in [
+      "metrics",
+      "metrics.publishers",
+      "metrics.connections,metrics.subscribers",
+    ] {
       let parsed = OccupancySubscription::parse(value).unwrap();
       assert_eq!(parsed.to_wire_value(), value);
     }

@@ -16,45 +16,58 @@ Ably-compatible realtime-профиль для Pub/Sub и Presence из шест
 
 ## Текущее состояние
 
-Сейчас каждый `RealtimeApplication` создаёт собственные process-local
-`ChannelHub` и `PresenceHub`.
+Автономный (memory) режим реализован по целевой архитектуре и является
+единственным работающим режимом. `RealtimeApplication::new` собирает
+`MemoryChannelStore` (одна реализация `AttachmentStore` и `PresenceStore`),
+`ChannelRouter` и `InProcessChannelCommitDelivery`; точка внешней сборки —
+`RealtimeApplication::with_services`. Выбора `PRESENCE_STORE_DRIVER` пока нет:
+`EVENT_BUS_DRIVER=nats` даёт кластерный event bus при process-local Presence,
+что является недопустимым профилем и должно отклоняться при старте, когда
+появится выбор драйвера.
 
-`PresenceHub` хранит:
+Работает в memory-режиме:
 
-- `channel -> connection_id -> PresenceMessage`;
-- обратный индекс `connection_id -> channels`;
-- не более одного member на connection в одном channel.
+- `ATTACH` вычисляет effective modes как пересечение `ATTACH.flags` и
+  capability токена (`TokenCapability::allows`: точное имя, `ns:*`, `*`,
+  operation `*`); пустое пересечение — отказ. `ATTACH.params.occupancy`
+  разбирается, требует `channel-metadata` и попадает в attachment, `ATTACHED`
+  возвращает effective flags и распознанные params;
+- `ENTER`/`UPDATE`/`LEAVE` проходят через `PresenceBatchCommand` с typed
+  `PresenceClientIdPolicy`; batch проверяется целиком на рабочей копии и
+  фиксируется одной revision и одним `PresenceChannelChanged`;
+- operation ledger дедуплицирует клиентские mutation по
+  `(application_id, connection_id, msg_serial)` с проверкой request fingerprint,
+  хранит committed и rejected outcomes, ограничен окном
+  `presence_ledger_capacity`, закрывается при disconnect и очищается по
+  `connection_state_ttl` (см. [Хранилища состояния канала](#хранилища-состояния-канала));
+- `DETACH` и disconnect удаляют attachment и members соединения, создавая
+  server-generated `Leave` deltas; disconnect проверяет все каналы до первого
+  изменения;
+- `SYNC` строится из snapshot после регистрации authoritative attachment;
+  `PRESENCE` deltas проецируются локальным соединениям через `ChannelRouter`;
+- каждая команда store несёт кандидат `event_id` (`support::fresh_uuid`),
+  memory store не генерирует идентификаторы сам; для disconnect идентификатор
+  канала выводится `DisconnectConnectionCommand::channel_event_id`
+  (`support::derive_uuid`);
+- health публикует `node.id`/`node.slot` и `checks.traffic`.
 
-Входящий `clientId` заменяется `clientId` соединения. `ATTACH` сначала
-регистрирует локальный sender, затем читает локальный snapshot и отправляет
-`ATTACHED` и `SYNC`. Snapshot не имеет revision, а между его чтением и локальной
-рассылкой delta нет barrier.
+Ещё не реализовано:
 
-`ENTER`, `UPDATE`, `LEAVE`, `DETACH` и disconnect меняют только process-local
-state и рассылаются только через локальный `ChannelHub`. События
-`WebsocketConnected` и `WebsocketDisconnected` остаются `LocalOnly`.
-`ChannelMessageSubmitted` уже имеет `DeliveryClass::AllNodes`, но это не делает
-Presence кластерным.
+- Occupancy-проекция: события с `occupancy` создаются, но initial
+  `[meta]occupancy` и изменения счётчиков клиентам не доставляются;
+- идемпотентность `InProcessChannelCommitDelivery` по `event_id`: повтор
+  mutation после потерянного `ACK` повторно рассылает deltas;
+- capability check для publish обычного `MESSAGE`;
+- contract test suite store; aggregated attachments (`AttachmentTracking::Aggregated`
+  отклоняется memory store); Redis store, outbox publisher, leases, reaper,
+  cluster projector.
 
-В wire types пока отсутствуют необходимые части Occupancy-контракта:
-
-- `ProtocolMessage.params`;
-- `channelSerial`;
-- requested и effective channel modes;
-- capability checks для attach, publish и presence;
-- операция capability `channel-metadata`;
-- `Message.id`, `Message.timestamp`, `Message.connectionId` и
-  `Message.encoding`.
-
-`PRESENCE_STORE_DRIVER`, `PresenceStore`, `InMemoryPresenceStore` и
-`RedisPresenceStore` сейчас в коде и конфигурации отсутствуют. Ниже это целевые
-компоненты, а не описание уже работающего runtime.
-
-Текущий `POST /auth/realtime/{application_id}/token` также является временным
-application API: он принимает только `clientId`, возвращает внутренний
-`ApiResponse` и выдаёт wildcard `publish/subscribe/presence`. Он ещё не является
-Ably SDK `authUrl` или стандартным `/keys/{keyName}/requestToken`. Целевой
-совместимый контракт описан в разделе [Token authentication и Ably SDK](#token-authentication-и-ably-sdk).
+`POST /auth/realtime/{application_id}/token` остаётся временным application
+API: он принимает только `clientId`, возвращает внутренний `ApiResponse` и
+выдаёт wildcard `publish/subscribe/presence` без `channel-metadata`, поэтому
+через штатный токен Occupancy запросить нельзя. Он ещё не является Ably SDK
+`authUrl` или стандартным `/keys/{keyName}/requestToken`. Целевой совместимый
+контракт описан в разделе [Token authentication и Ably SDK](#token-authentication-и-ably-sdk).
 
 ## Цели
 
@@ -67,7 +80,7 @@ Ably SDK `authUrl` или стандартным `/keys/{keyName}/requestToken`.
 - Очистка attachments и members после аварии соединения или ноды.
 - Ably-compatible realtime Occupancy в заявленных границах v1.
 - Один доменный контракт для memory- и Redis-реализаций.
-- Сохранение `ChannelHub` как локальной точки доставки WebSocket-кадров.
+- Сохранение `ChannelRouter` как локальной точки доставки WebSocket-кадров.
 
 ## Высокая нагрузка: неидентифицированная аудитория
 
@@ -209,7 +222,7 @@ AttachmentStore / PresenceStore + ChannelCommitDelivery
                                 `-- local channel projector
                                            |
                                            v
-                                    local ChannelHub
+                                    local ChannelRouter
 ```
 
 Attachments with aggregated Occupancy additionally go through a local shard
@@ -461,9 +474,21 @@ Normalized payload и typed `PresenceMutationOutcome` хранятся вмес�
 `ATTACH` не использует этот ledger: повторный attach естественно
 идемпотентен по `(application_id, channel, connection_id)`, не увеличивает
 counters и возвращает свежий snapshot. Повторный `DETACH` является успешным
-idempotent cleanup. Для disconnect, reaper и других внутренних cleanup-команд
-stable operation ID включает owner generation, connection, channel и тип
-операции.
+idempotent cleanup.
+
+Идентичность события фиксируется до вызова хранилища. Каждая команда store
+(`attach`, `detach`, `disconnect`, `apply_presence`) несёт кандидат `event_id`
+— свежий v4 UUID, который сервис генерирует заново на каждый вызов. Store
+обязан использовать кандидат как `event_id` создаваемого события и не имеет
+права генерировать свой; при воспроизведении уже обработанной операции
+возвращается исходное событие с исходным `event_id`, а кандидат игнорируется.
+Для многоканального disconnect store выводит `event_id` каждого канала
+детерминированно из кандидата (`uuid5(candidate, channel)`), поэтому число
+каналов не нужно знать заранее. Роли не смешиваются: случайность кандидата —
+источник уникальности опубликованных событий, store — источник стабильности
+при повторе; вызывающий никогда не переиспользует кандидат между вызовами.
+Кандидат события, которое не создано (`Unchanged`, rejected outcome, replay),
+никуда не записывается и конфликтов не создаёт.
 
 Запись `PresenceMutationOutcome` хранится до authoritative disconnect
 connection-а. Пока connection жив, TTL ledger продлевается вместе с owner lease
@@ -500,9 +525,10 @@ connection не должен приниматься transport-ом.
 возвращает свежий snapshot и текущие Presence/Occupancy versions, чтобы повторный
 ответ не восстанавливал устаревший snapshot.
 
-Будущие `InMemoryPresenceStore` и `RedisPresenceStore` проходят один contract
-test suite. Memory-реализация нужна для автономного режима, но её внутреннее
-устройство не определяет доменную модель.
+`MemoryChannelStore` и будущий `RedisChannelStore` проходят один contract
+test suite (сценарии пишутся против трейтов `AttachmentStore` и
+`PresenceStore`, раннер — на реализацию). Memory-реализация нужна для
+автономного режима, но её внутреннее устройство не определяет доменную модель.
 
 `ChannelStateStoreError` содержит только инфраструктурные, serialization и
 storage-level ошибки. Ожидаемый protocol rejection не маскируется под store
@@ -599,6 +625,16 @@ Reaper не проходит через проверку lease уже умерш
 
 ## Canonical Presence event и coalesced Occupancy event
 
+Все сериализуемые типы проекта используют один wire-формат — `camelCase` для
+полей и для вариантов enum (`#[serde(rename_all = "camelCase")]`, для enum со
+struct-вариантами дополнительно `rename_all_fields`). Это относится не только к
+Ably-протоколу и HTTP, но и к payload событий, записям ledger и будущим
+Redis-значениям: `{"rejected": {"clientIdNotAllowed": {"clientId": ".."}}}`,
+`{"committed": {"changed": {"eventId": .., "change": {..}}}}`. Исключения —
+только внешние контракты с фиксированными именами (JWT claims `x-ably-*`,
+query-параметр `access_token`) и файлы конфигурации. Формат хранимых типов
+фиксируется тестами канонического JSON.
+
 Для каждой зафиксированной `presence_revision` создаётся ровно один canonical
 `PresenceChannelChanged` с `DeliveryClass::AllNodes`. Точные identified
 attachment transitions также могут содержать немедленный Occupancy snapshot
@@ -693,10 +729,13 @@ Outbox нельзя обрезать через approximate `MAXLEN` до publis
 durable дальнейшую доставку.
 
 Обычный `EventBus::publish` для outbox не подходит, потому что создаёт новый
-event ID. Реализация должна добавить явный путь публикации подготовленного
-`EventMessage` либо передавать его непосредственно transport publisher-у. Этот
-же prepared-message contract использует local commit delivery, но направляет
-event сразу в локальный projector, а не в transport publisher.
+event ID. Явный путь публикации подготовленного envelope —
+`EventBus::publish_message(&EventMessage, DeliveryClass)`: он сохраняет
+`event_id`, маршрутизирует по переданному delivery class (envelope его не несёт)
+и принимает сообщение по ссылке, чтобы retry шёл теми же байтами, что
+записаны в outbox. Этот же prepared-message contract использует local commit
+delivery, но направляет event сразу в локальный projector, а не в transport
+publisher.
 
 Гарантии ACK:
 
@@ -778,7 +817,7 @@ atomic Redis state + outbox commit
 Исходная нода не делает direct broadcast. Её клиенты получают delta через тот
 же consumer, что и клиенты остальных нод.
 
-При Redis error возвращается `NACK`; local `PresenceHub` не используется как
+При Redis error возвращается `NACK`; process-local state не используется как
 fallback. Потерянный ответ повторяется с тем же `msgSerial`, а сохранённый
 outcome возвращается без нового commit.
 
@@ -1235,6 +1274,10 @@ Redis replication durability остаётся инфраструктурным �
 Redis failover.
 
 ## Этапы реализации
+
+Этапы 1–4 выполнены для memory-режима (см. [Текущее состояние](#текущее-состояние));
+из этапа 3 не закрыта идемпотентность local delivery, из этапа 1 — contract
+test suite. Остальные этапы впереди.
 
 1. Добавить domain types, typed mutation outcome и `PresenceStore`; подключить
    модуль к crate, перенести текущую local-логику в memory adapter и общий

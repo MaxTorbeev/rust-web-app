@@ -8,7 +8,7 @@ use event_bus::{DedupClaim, DedupKey, DedupLease, DedupStore, DedupStoreError, D
 use redis_client::RedisClient;
 use std::sync::Arc;
 use std::time::Duration;
-use uuid::Uuid;
+use support::fresh_uuid;
 
 /// Redis-backed implementation of the event processing deduplication store.
 ///
@@ -36,7 +36,7 @@ impl DedupStore for RedisDedupStore {
   ) -> DedupStoreFuture<'a, DedupClaim> {
     Box::pin(async move {
       let storage_key = redis_key(self.config.key_prefix(), key);
-      let token = Uuid::new_v4();
+      let token = fresh_uuid();
       let lease_value = lease_value(token);
       let lease_ttl_ms = redis_ttl_milliseconds(lease_ttl)
         .map_err(DedupStoreError::backend)?

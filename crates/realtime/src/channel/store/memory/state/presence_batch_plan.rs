@@ -4,7 +4,6 @@ use crate::{
   PresenceMemberChange, PresenceMutationAction, PresenceRejection,
 };
 use std::collections::HashMap;
-use uuid::Uuid;
 
 /// Проверенный, но ещё не применённый batch Presence-действий одного соединения.
 ///
@@ -175,7 +174,7 @@ impl PresenceBatchDelta {
     occupancy: Option<OccupancyChange>,
   ) -> CommittedChannelTransition {
     let event = CommittedPresenceEvent::new(
-      Uuid::new_v4(),
+      command.event_id,
       PresenceChannelChanged {
         channel: command.channel.clone(),
         origin: command.actor.connection_actor.node_instance.clone(),

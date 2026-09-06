@@ -1,5 +1,6 @@
 use support::timestamp::Timestamp;
 use crate::{ChannelKey, DetachCommand, ProtocolMessage};
+use support::fresh_uuid;
 use crate::transport::SocketContext;
 
 pub async fn detach(message: ProtocolMessage, context: &SocketContext<'_>) -> ProtocolMessage {
@@ -14,6 +15,7 @@ pub async fn detach(message: ProtocolMessage, context: &SocketContext<'_>) -> Pr
     ),
     actor: context.connection.actor(),
     request_time: Timestamp::now(),
+    event_id: fresh_uuid(),
   };
 
   if let Err(error) = context.attachments.detach(command).await {

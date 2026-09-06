@@ -53,11 +53,18 @@ mod tests {
       DeploymentSlot::Green,
     );
 
-    let encoded = serde_json::to_value(LiveHealthResponse::new(AppVersion::CURRENT, &node)).unwrap();
+    let encoded =
+      serde_json::to_value(LiveHealthResponse::new(AppVersion::CURRENT, &node)).unwrap();
 
     assert_eq!(encoded["schemaVersion"], json!(HEALTH_SCHEMA_VERSION));
     assert_eq!(encoded["status"], json!("alive"));
-    assert_eq!(encoded["node"], json!({ "id": "realtime-test", "slot": "green" }));
-    assert_eq!(encoded["release"]["version"], json!(AppVersion::CURRENT.version()));
+    assert_eq!(
+      encoded["node"],
+      json!({ "id": "realtime-test", "slot": "green" })
+    );
+    assert_eq!(
+      encoded["release"]["version"],
+      json!(AppVersion::CURRENT.version())
+    );
   }
 }

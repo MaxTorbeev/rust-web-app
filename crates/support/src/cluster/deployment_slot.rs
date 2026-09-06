@@ -1,6 +1,6 @@
+use crate::app::{ReadEnvError, read_env_or};
 use serde::Serialize;
 use std::fmt;
-use crate::app::{ReadEnvError, read_env_or};
 
 /// Принадлежность ноды к deployment-группе.
 ///
@@ -48,7 +48,8 @@ impl DeploymentSlot {
   ///
   /// В настоящем blue-green deployment slot указывается явно.
   pub fn from_env() -> Result<Self, DeploymentSlotError> {
-    let value = read_env_or("DEPLOYMENT_SLOT", "single").map_err(DeploymentSlotError::Environment)?;
+    let value =
+      read_env_or("DEPLOYMENT_SLOT", "single").map_err(DeploymentSlotError::Environment)?;
 
     Self::parse(&value)
   }
@@ -69,9 +70,15 @@ mod tests {
 
   #[test]
   fn parses_allowed_slots() {
-    assert_eq!(DeploymentSlot::parse("single").unwrap(), DeploymentSlot::Single);
+    assert_eq!(
+      DeploymentSlot::parse("single").unwrap(),
+      DeploymentSlot::Single
+    );
     assert_eq!(DeploymentSlot::parse("blue").unwrap(), DeploymentSlot::Blue);
-    assert_eq!(DeploymentSlot::parse("green").unwrap(), DeploymentSlot::Green);
+    assert_eq!(
+      DeploymentSlot::parse("green").unwrap(),
+      DeploymentSlot::Green
+    );
   }
 
   #[test]

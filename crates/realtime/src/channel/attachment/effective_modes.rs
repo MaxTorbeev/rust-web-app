@@ -44,7 +44,11 @@ mod tests {
 
     assert_eq!(
       modes,
-      vec![ChannelMode::Subscribe, ChannelMode::Presence, ChannelMode::PresenceSubscribe],
+      vec![
+        ChannelMode::Subscribe,
+        ChannelMode::Presence,
+        ChannelMode::PresenceSubscribe
+      ],
     );
   }
 

@@ -1,3 +1,4 @@
+use crate::fresh_uuid;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -9,7 +10,7 @@ pub struct BootGeneration(Uuid);
 
 impl BootGeneration {
   pub fn generate() -> Self {
-    Self(Uuid::new_v4())
+    Self(fresh_uuid())
   }
 
   pub fn as_uuid(&self) -> &Uuid {

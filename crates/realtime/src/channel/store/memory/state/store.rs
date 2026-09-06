@@ -1,6 +1,5 @@
 use std::collections::{HashMap, HashSet};
 use support::timestamp::Timestamp;
-use uuid::Uuid;
 use super::channel::ChannelState;
 use super::IndividualDetachOutcome;
 use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, PresenceBatchCommand, PresenceChannelChanged, PresenceMutationOutcome, PresenceMutationReceipt, PresenceRejection, PresenceSnapshot};
@@ -100,7 +99,7 @@ impl MemoryStoreState {
 
     let event = occupancy_change.map(|occupancy| {
       CommittedPresenceEvent::new(
-        Uuid::new_v4(),
+        command.event_id,
         PresenceChannelChanged {
           channel: channel.clone(),
           origin: command.actor.node_instance,
@@ -156,7 +155,7 @@ impl MemoryStoreState {
     Ok(outcome.into_transition(command))
   }
 
-  /// Удаляет соединение из всех его каналов и очищает журнал Presence.
+  /// Удаляет соединение из всех его каналов и закрывает его журнал операций.
   ///
   /// Все каналы проверяются до первого изменения состояния.
   /// Повторное отключение возвращает пустой список переходов.
@@ -193,6 +192,7 @@ impl MemoryStoreState {
 
     for channel in channels {
       let transition = self.detach(DetachCommand {
+        event_id: command.channel_event_id(&channel),
         channel,
         actor: command.actor.clone(),
         request_time: command.request_time,

@@ -7,4 +7,4 @@ edition = "2024"
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }

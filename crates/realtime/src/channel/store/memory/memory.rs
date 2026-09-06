@@ -1,12 +1,12 @@
-use support::timestamp::Timestamp;
-use tokio::sync::Mutex;
 use super::state::MemoryStoreState;
 use crate::connection::DisconnectConnectionCommand;
 use crate::{
   AttachCommand, AttachmentStore, AttachmentStoreFuture, ChannelAttachOutcome, ChannelKey,
-  CommittedChannelTransition, DetachCommand, PresenceBatchCommand, PresenceMutationReceipt,
-  PresenceLedgerPolicy, PresenceSnapshot, PresenceStore, PresenceStoreFuture,
+  CommittedChannelTransition, DetachCommand, PresenceBatchCommand, PresenceLedgerPolicy,
+  PresenceMutationReceipt, PresenceSnapshot, PresenceStore, PresenceStoreFuture,
 };
+use support::timestamp::Timestamp;
+use tokio::sync::Mutex;
 
 /// Локальное хранилище состояния каналов.
 pub struct MemoryChannelStore {
@@ -61,7 +61,10 @@ impl AttachmentStore for MemoryChannelStore {
     Box::pin(async move { self.state.lock().await.attach(command) })
   }
 
-  fn detach(&self, command: DetachCommand) -> AttachmentStoreFuture<'_, CommittedChannelTransition> {
+  fn detach(
+    &self,
+    command: DetachCommand,
+  ) -> AttachmentStoreFuture<'_, CommittedChannelTransition> {
     Box::pin(async move { self.state.lock().await.detach(command) })
   }
 

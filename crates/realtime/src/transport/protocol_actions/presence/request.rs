@@ -10,6 +10,7 @@ use crate::{
   ChannelKey, Connection, PresenceActor, PresenceBatchCommand, PresenceBatchItem,
   PresenceClientIdPolicy, PresenceMutationAction, ProtocolMessage,
 };
+use support::fresh_uuid;
 
 pub(super) fn build_command(
   message: &ProtocolMessage,
@@ -68,6 +69,7 @@ pub(super) fn build_command(
     msg_serial,
     request_fingerprint,
     request_time,
+    event_id: fresh_uuid(),
   })
 }
 

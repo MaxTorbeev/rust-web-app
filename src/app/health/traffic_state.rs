@@ -9,7 +9,8 @@ pub(crate) enum TrafficState {
   /// Graceful shutdown начат: readiness возвращает `503`, liveness — `200`.
   ///
   /// Переход в это состояние появится вместе с application-level draining;
-  /// сейчас приложение всегда находится в `Accepting`.
+  /// сейчас приложение всегда находится в `Accepting`, и вариант
+  /// конструируется только тестами.
   #[allow(dead_code)]
   Draining,
 }

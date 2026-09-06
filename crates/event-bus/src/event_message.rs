@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use support::fresh_uuid;
 use uuid::Uuid;
 
 use crate::{Event, EventMessageError};
@@ -37,7 +38,7 @@ impl EventMessage {
   where
     E: Event,
   {
-    Self::try_from_event_with_id(Uuid::new_v4(), event)
+    Self::try_from_event_with_id(fresh_uuid(), event)
   }
 
   /// Creates a message with an existing identifier.

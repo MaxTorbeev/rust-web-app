@@ -165,7 +165,7 @@ impl ChannelState {
       return Ok(Err(PresenceRejection::NotAttached));
     };
 
-    Self::validate_individual_detach(attachment, actor)?;
+    Self::validate_individual_ownership(attachment, actor)?;
 
     if !attachment.has_mode(ChannelMode::Presence) {
       return Ok(Err(PresenceRejection::PresenceModeNotEnabled));
@@ -213,7 +213,7 @@ impl ChannelState {
     };
 
     // Проверяем принадлежность attachment экземпляру ноды и индивидуальный учёт.
-    Self::validate_individual_detach(attachment, actor)?;
+    Self::validate_individual_ownership(attachment, actor)?;
 
     // Определяем, затронет ли detach список участников Presence.
     let has_members = self
@@ -281,7 +281,7 @@ impl ChannelState {
       return Ok(());
     };
 
-    Self::validate_individual_detach(attachment, actor)?;
+    Self::validate_individual_ownership(attachment, actor)?;
 
     let has_members = self
       .members
@@ -297,7 +297,9 @@ impl ChannelState {
     Ok(())
   }
 
-  fn validate_individual_detach(attachment: &Attachment, actor: &ConnectionActor) -> Result<(), ChannelStateStoreError> {
+  /// Проверяет, что attachment принадлежит экземпляру ноды актора и учитывается
+  /// индивидуально. Нарушение — ошибка владения, а не доменный отказ клиенту.
+  fn validate_individual_ownership(attachment: &Attachment, actor: &ConnectionActor) -> Result<(), ChannelStateStoreError> {
     if attachment.node_instance != actor.node_instance {
       return Err(ChannelStateStoreError::Conflict {
         message: format!(

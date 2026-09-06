@@ -2,7 +2,6 @@ use crate::{
   CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, OccupancyChange,
   PresenceChangeAction, PresenceChannelChanged, PresenceMember, PresenceMemberChange,
 };
-use uuid::Uuid;
 
 /// Результат удаления индивидуального attachment.
 pub(super) enum IndividualDetachOutcome {
@@ -30,7 +29,7 @@ impl IndividualDetachOutcome {
         occupancy_version,
         occupancy_change,
       } => {
-        let event_id = Uuid::new_v4();
+        let event_id = command.event_id;
 
         let member_changes = removed_members
           .into_iter()

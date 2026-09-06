@@ -1,6 +1,7 @@
 use crate::{ChannelKey, PresenceActor, PresenceMutationAction};
 use serde_json::Value;
 use support::timestamp::Timestamp;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct PresenceBatchItem {
@@ -31,6 +32,13 @@ pub struct PresenceBatchCommand {
 
   /// Время получения запроса сервером.
   pub request_time: Timestamp,
+
+  /// Кандидат `event_id` события, которое создаст эта команда.
+  ///
+  /// Свежий `support::fresh_uuid` на каждый вызов. При повторе `msg_serial`
+  /// хранилище возвращает исходное событие из журнала операций и игнорирует
+  /// кандидат — так повтор получает прежний `event_id`.
+  pub event_id: Uuid,
 }
 
 impl PresenceBatchCommand {

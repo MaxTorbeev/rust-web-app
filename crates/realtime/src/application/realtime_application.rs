@@ -1,4 +1,5 @@
 use crate::{ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection, ConnectionCleanupError, InProcessChannelCommitDelivery, MemoryChannelStore, PresenceLedgerPolicy, PresenceService};
+use support::fresh_uuid;
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 use support::NodeInstance;
@@ -102,6 +103,7 @@ impl RealtimeApplication {
       .disconnect(DisconnectConnectionCommand {
         actor: connection.actor(),
         request_time: Timestamp::now(),
+        event_id: fresh_uuid(),
       })
       .await?;
 
