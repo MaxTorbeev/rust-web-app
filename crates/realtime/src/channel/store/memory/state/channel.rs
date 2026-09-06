@@ -1,6 +1,5 @@
 use std::collections::HashMap;
-use support::NodeInstance;
-use crate::{Attachment, AttachmentTracking, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, ConnectionId, OccupancyChange, OccupancyMetrics, OccupancyShardBaseline, PresenceBatchCommand, PresenceMember, PresenceMutationOutcome, PresenceRejection, PresenceSnapshot};
+use crate::{Attachment, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceBatchCommand, PresenceMember, PresenceMutationOutcome, PresenceRejection, PresenceSnapshot};
 use crate::connection::ConnectionActor;
 use super::{IndividualDetachOutcome, PresenceBatchPlan};
 
@@ -12,9 +11,6 @@ pub(super) struct ChannelState {
 
   /// Участники Presence, сгруппированные по соединению и `client_id`.
   members: HashMap<ConnectionId, HashMap<String, PresenceMember>>,
-
-  /// Последние абсолютные счётчики Occupancy каждого экземпляра ноды.
-  occupancy_shards: HashMap<NodeInstance, OccupancyShardBaseline>,
 
   /// Текущая ревизия списка участников Presence.
   presence_revision: u64,
@@ -40,10 +36,9 @@ impl ChannelState {
     };
 
     for attachment in self.attachments.values() {
-      // Предотвратить двойной подсчёт агрегированного attachment.
-      if attachment.accounting == AttachmentTracking::Aggregated {
-        continue;
-      }
+      // Локальное хранилище принимает только индивидуальный учёт: каждый
+      // attachment — ровно одно соединение в метриках.
+      debug_assert!(attachment.is_individual(), "memory store holds only individual attachments");
 
       metrics.connections += 1;
 
@@ -62,12 +57,6 @@ impl ChannelState {
       if attachment.has_mode(ChannelMode::PresenceSubscribe) {
         metrics.presence_subscribers += 1;
       }
-    }
-
-    for shard in self.occupancy_shards.values() {
-      metrics.connections += shard.connections;
-      metrics.subscribers += shard.subscribers;
-      metrics.presence_subscribers += shard.presence_subscribers;
     }
 
     metrics
@@ -90,10 +79,6 @@ impl ChannelState {
     }
   }
 
-  pub(super) const fn occupancy_version(&self) -> u64 {
-    self.occupancy_version
-  }
-
   /// Сохраняет или обновляет attachment соединения.
   ///
   /// Возвращает изменение Occupancy, если сохранение повлияло на метрики канала.
@@ -103,21 +88,20 @@ impl ChannelState {
   ) -> Result<Option<OccupancyChange>, ChannelStateStoreError> {
     self.validate_attachment(&attachment)?;
 
-    let connection_id = attachment.connection_id.clone();
+    // Переполнение проверяется до изменения состояния, как и в остальных
+    // операциях: после проверки фиксация не может завершиться ошибкой.
+    let next_occupancy_version = self.next_occupancy_version()?;
+
     let before = self.occupancy();
 
-    let previous = self
+    self
       .attachments
-      .insert(connection_id.clone(), attachment);
+      .insert(attachment.connection_id.clone(), attachment);
 
-    let after = self.occupancy();
-    let change = OccupancyChange::between(before, after);
+    let change = OccupancyChange::between(before, self.occupancy());
 
     if change.is_some() {
-      if let Err(error) = self.increment_occupancy_version() {
-        self.restore_attachment(connection_id, previous);
-        return Err(error);
-      }
+      self.occupancy_version = next_occupancy_version;
     }
 
     Ok(change)
@@ -365,38 +349,14 @@ impl ChannelState {
   }
 
   fn validate_attachment(&self, attachment: &Attachment) -> Result<(), ChannelStateStoreError> {
-    if let Some(current) = self.attachments.get(&attachment.connection_id) {
-      if current.node_instance != attachment.node_instance {
-        return Err(ChannelStateStoreError::Conflict {
-          message: format!("attachment {} belongs to another node instance", attachment.connection_id.as_str()),
-        });
-      }
+    let current = self.attachments.get(&attachment.connection_id);
+
+    if current.is_some_and(|current| current.node_instance != attachment.node_instance) {
+      return Err(ChannelStateStoreError::Conflict {
+        message: format!("attachment {} belongs to another node instance", attachment.connection_id.as_str()),
+      });
     }
 
     Ok(())
-  }
-
-  fn increment_occupancy_version(&mut self) -> Result<(), ChannelStateStoreError> {
-    let next_version = self
-      .occupancy_version
-      .checked_add(1)
-      .ok_or_else(|| ChannelStateStoreError::Internal {
-        message: "occupancy version overflow".to_owned(),
-      })?;
-
-    self.occupancy_version = next_version;
-
-    Ok(())
-  }
-
-  fn restore_attachment(&mut self, connection_id: ConnectionId, previous: Option<Attachment>) {
-    match previous {
-      Some(previous) => {
-        self.attachments.insert(connection_id, previous);
-      }
-      None => {
-        self.attachments.remove(&connection_id);
-      }
-    }
   }
 }
