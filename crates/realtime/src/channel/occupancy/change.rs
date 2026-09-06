@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OccupancyChange {
   pub metrics: OccupancyMetrics,
   pub changed_categories: BTreeSet<OccupancyCategory>,

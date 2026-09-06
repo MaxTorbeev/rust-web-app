@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use crate::OccupancyCategory;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OccupancyMetrics {
   pub connections: u64,
   pub publishers: u64,

@@ -1,6 +1,7 @@
 use serde::Serialize;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AccessTokenResponse {
   pub application_id: String,
   pub client_id: String,

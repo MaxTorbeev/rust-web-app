@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Канал и приложение, к которым подключается соединение.
 #[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, Hash)]
+#[serde(rename_all = "camelCase")]
 pub struct ChannelKey {
   pub application_id: ApplicationId,
   pub channel: String,

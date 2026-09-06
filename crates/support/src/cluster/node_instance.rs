@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 
 /// Конкретный запущенный экземпляр узла приложения.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeInstance {
   pub node_id: NodeId,
   pub boot_generation: BootGeneration,

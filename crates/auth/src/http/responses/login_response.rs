@@ -2,6 +2,7 @@ use crate::UserIdentity;
 use serde::Serialize;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct LoginResponse {
   pub token_type: String,
   pub access_token: String,

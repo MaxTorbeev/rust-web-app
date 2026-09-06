@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 /// Варианты, описывающие состояние журнала (`ConflictingReplay`,
 /// `StaleOperation`, `ConnectionClosed`), в журнал не попадают.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum PresenceRejection {
   /// Соединение не присоединено к каналу.
   NotAttached,

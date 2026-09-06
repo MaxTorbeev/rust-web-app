@@ -126,7 +126,7 @@ Cache-Control: no-store
 {
   "data": {
     "schemaVersion": 1,
-    "status": "not_ready",
+    "status": "notReady",
     "node": {
       "id": "realtime-4c5d5d83-37dc-4b7d-93b0-75229bf5ff50",
       "slot": "green"

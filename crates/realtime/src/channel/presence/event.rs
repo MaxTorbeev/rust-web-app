@@ -6,7 +6,7 @@ use support::{NodeInstance, timestamp::Timestamp};
 use uuid::Uuid;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub enum PresenceChangeAction {
   Enter,
   Update,
@@ -16,6 +16,7 @@ pub enum PresenceChangeAction {
 /// Полностью сформированное неизменяемое событие,
 /// соответствующее уже зафиксированному изменению Presence.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommittedPresenceEvent {
   event_id: Uuid,
   change: PresenceChannelChanged,
@@ -48,6 +49,7 @@ impl TryFrom<&CommittedPresenceEvent> for EventMessage {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PresenceChannelChanged {
   pub channel: ChannelKey,
   pub origin: NodeInstance,
@@ -68,6 +70,7 @@ impl Event for PresenceChannelChanged {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PresenceMemberChange {
   pub action: PresenceChangeAction,
   pub connection_id: ConnectionId,
@@ -87,26 +90,26 @@ mod tests {
     let event_id = Uuid::parse_str("a15bb6d5-51ea-47db-a9a5-08b41b3b2d91").unwrap();
     let change = serde_json::from_value::<PresenceChannelChanged>(json!({
       "channel": {
-        "application_id": "application-1",
+        "applicationId": "application-1",
         "channel": "room-1"
       },
       "origin": {
-        "node_id": "node-1",
-        "boot_generation": "293a2951-5ba0-482c-91c7-0a0c72a5ce4b",
-        "started_at": 1_700_000_000_000_u64
+        "nodeId": "node-1",
+        "bootGeneration": "293a2951-5ba0-482c-91c7-0a0c72a5ce4b",
+        "startedAt": 1_700_000_000_000_u64
       },
-      "presence_revision": 11,
-      "occupancy_version": 7,
-      "member_changes": [{
+      "presenceRevision": 11,
+      "occupancyVersion": 7,
+      "memberChanges": [{
         "action": "enter",
-        "connection_id": "connection-1",
-        "client_id": "client-1",
+        "connectionId": "connection-1",
+        "clientId": "client-1",
         "data": {"status": "online"},
-        "message_id": "message-1",
+        "messageId": "message-1",
         "timestamp": 1_700_000_000_000_u64
       }],
       "occupancy": null,
-      "occurred_at": 1_700_000_000_001_u64
+      "occurredAt": 1_700_000_000_001_u64
     }))
     .expect("canonical presence change must deserialize");
 

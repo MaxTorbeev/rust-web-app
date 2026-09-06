@@ -78,14 +78,14 @@ fn event_bus_checks(state: &EventBusHealthState) -> (CheckStatus, CheckStatus) {
 }
 
 #[derive(Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 enum ReadyStatus {
   Ready,
   NotReady,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 enum CheckStatus {
   Up,
   Down,
