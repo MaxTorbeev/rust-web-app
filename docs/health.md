@@ -8,8 +8,10 @@
 Контракт реализован частично. Маршруты `GET /health/live` и
 `GET /health/ready` зарегистрированы, Git revision вшивается в Rust binary, а
 readiness проверяет Redis, JetStream topology и lifecycle incoming consumer-а.
-Ещё не реализованы node/slot и traffic state, общий timeout readiness,
-healthcheck контейнера `app` и deployment semaphore.
+Оба ответа содержат `node.id` из `APP_NODE_ID` и `node.slot` из
+`DEPLOYMENT_SLOT`; `checks.traffic` публикуется, но application-level draining
+ещё не реализован, поэтому значение всегда `accepting`. Ещё не реализованы
+общий timeout readiness, healthcheck контейнера `app` и deployment semaphore.
 
 Документ использует термин **deployment semaphore** или **deployment gate** для
 логического условия допуска новой группы нод к трафику. Это не mutex внутри
@@ -76,7 +78,7 @@ Cache-Control: no-store
       "slot": "green"
     },
     "release": {
-      "version": "0.0.3-alpha",
+      "version": "0.0.4-alpha",
       "revision": "4f37cce87ba55e3d5ca31a52ca9d8f2058363be4"
     }
   }
@@ -101,7 +103,7 @@ Liveness не обращается к Redis, NATS, JetStream или OTel Collect
       "slot": "green"
     },
     "release": {
-      "version": "0.0.3-alpha",
+      "version": "0.0.4-alpha",
       "revision": "4f37cce87ba55e3d5ca31a52ca9d8f2058363be4"
     },
     "checks": {
@@ -132,7 +134,7 @@ Cache-Control: no-store
       "slot": "green"
     },
     "release": {
-      "version": "0.0.3-alpha",
+      "version": "0.0.4-alpha",
       "revision": "4f37cce87ba55e3d5ca31a52ca9d8f2058363be4"
     },
     "checks": {

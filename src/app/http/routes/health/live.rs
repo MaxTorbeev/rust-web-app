@@ -10,5 +10,5 @@ use crate::app::http::responses::LiveHealthResponse;
 use super::health_response;
 
 pub(crate) async fn live(State(health): State<Arc<HealthCheck>>) -> Response {
-  health_response(StatusCode::OK, LiveHealthResponse::from(health.version()))
+  health_response(StatusCode::OK, LiveHealthResponse::from(health.as_ref()))
 }

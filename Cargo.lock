@@ -1097,6 +1097,7 @@ dependencies = [
  "realtime",
  "redis-client",
  "serde",
+ "serde_json",
  "support",
  "thiserror",
  "tokio",

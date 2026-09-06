@@ -4,16 +4,17 @@ use redis_client::health::HealthState as RedisHealthState;
 use serde::Serialize;
 use support::health::HealthReport;
 
-use crate::app::health::HealthState;
+use crate::app::health::{HealthState, TrafficState};
 use crate::app::providers::EventBusHealthState;
 
-use super::{HEALTH_SCHEMA_VERSION, ReleaseResponse};
+use super::{HEALTH_SCHEMA_VERSION, NodeResponse, ReleaseResponse};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ReadyHealthResponse {
   schema_version: u8,
   status: ReadyStatus,
+  node: NodeResponse,
   release: ReleaseResponse,
   checks: HealthChecksResponse,
 }
@@ -27,6 +28,7 @@ impl From<&HealthState> for ReadyHealthResponse {
       } else {
         ReadyStatus::NotReady
       },
+      node: NodeResponse::from(state.node()),
       release: ReleaseResponse::from(state.version()),
       checks: HealthChecksResponse::from(state),
     }
@@ -34,7 +36,9 @@ impl From<&HealthState> for ReadyHealthResponse {
 }
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct HealthChecksResponse {
+  traffic: TrafficStatus,
   redis: CheckStatus,
   jetstream: CheckStatus,
   consumer: CheckStatus,
@@ -42,6 +46,11 @@ struct HealthChecksResponse {
 
 impl From<&HealthState> for HealthChecksResponse {
   fn from(state: &HealthState) -> Self {
+    let traffic = match state.traffic() {
+      TrafficState::Accepting => TrafficStatus::Accepting,
+      TrafficState::Draining => TrafficStatus::Draining,
+    };
+
     let redis = match state.redis() {
       RedisHealthState::Up => CheckStatus::Up,
       RedisHealthState::Down(_) => CheckStatus::Down,
@@ -50,6 +59,7 @@ impl From<&HealthState> for HealthChecksResponse {
     let (jetstream, consumer) = event_bus_checks(state.event_bus());
 
     Self {
+      traffic,
       redis,
       jetstream,
       consumer,
@@ -82,6 +92,13 @@ fn event_bus_checks(state: &EventBusHealthState) -> (CheckStatus, CheckStatus) {
 enum ReadyStatus {
   Ready,
   NotReady,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+enum TrafficStatus {
+  Accepting,
+  Draining,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

@@ -5,7 +5,7 @@ use crate::app::providers::EventBusProvider;
 use auth::AuthConfig;
 use realtime::{Realtime, RealtimeConfig};
 use redis_client::{RedisClient, RedisConfig};
-use support::{BootGeneration, NodeId, NodeInstance, app::read_env, timestamp::Timestamp};
+use support::{BootGeneration, DeploymentSlot, NodeId, NodeIdentity, NodeInstance, app::read_env, timestamp::Timestamp};
 
 mod config;
 mod health;
@@ -21,6 +21,11 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
     NodeId::try_new(read_env("APP_NODE_ID")?)?,
     BootGeneration::generate(),
     Timestamp::now(),
+  );
+
+  let node_identity = NodeIdentity::new(
+    node_instance.node_id.clone(),
+    DeploymentSlot::from_env()?,
   );
 
   let redis_config = RedisConfig::from_env()?;
@@ -48,6 +53,7 @@ pub async fn run() -> Result<(), Box<dyn std::error::Error>> {
   let event_bus_health = event_bus_runtime.health_check();
   let health = Arc::new(health::HealthCheck::new(
     app_version,
+    node_identity,
     redis_health,
     event_bus_health,
   ));
