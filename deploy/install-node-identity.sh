@@ -47,15 +47,14 @@ write_identity_file() {
   trap - EXIT
 }
 
-# Проверяет существующий identity-файл и переносит legacy-формат.
+# Проверяет существующий identity-файл.
 #
-# Значение identity никогда не меняется: node id участвует в owner lease и
-# ключах внешних систем. Мигрируется только имя переменной
-# (`REALTIME_NODE_ID` -> `APP_NODE_ID`), созданное скриптом до переименования.
+# Файл никогда не перезаписывается: node id участвует в owner lease и ключах
+# внешних систем. Допустима ровно одна строка `APP_NODE_ID=<id>`; любое другое
+# содержимое — ошибка, которую исправляют вручную, сохранив значение id.
 validate_identity_file() {
   local identity_line
   local line_count
-  local node_id
 
   [[ ! -L "$identity_file" ]] \
     || fail "$identity_file must not be a symbolic link"
@@ -66,24 +65,14 @@ validate_identity_file() {
   line_count="$(wc -l < "$identity_file" | tr -d '[:space:]')"
 
   [[ "$line_count" = "1" ]] \
-    || fail "$identity_file must contain exactly one line"
+    || fail "$identity_file must contain exactly one line: APP_NODE_ID=<id>"
 
   IFS= read -r identity_line < "$identity_file"
 
-  if [[ "$identity_line" =~ ^APP_NODE_ID=[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then
-    chmod 0600 "$identity_file"
-    echo "Realtime node identity already exists"
-    return
-  fi
+  [[ "$identity_line" =~ ^APP_NODE_ID=[A-Za-z0-9][A-Za-z0-9_-]*$ ]] \
+    || fail "$identity_file contains an invalid APP_NODE_ID: expected APP_NODE_ID=<id>, found '${identity_line%%=*}=...'"
 
-  if [[ "$identity_line" =~ ^REALTIME_NODE_ID=([A-Za-z0-9][A-Za-z0-9_-]*)$ ]]; then
-    node_id="${BASH_REMATCH[1]}"
-    write_identity_file "$node_id"
-    echo "Realtime node identity migrated to APP_NODE_ID"
-    return
-  fi
-
-  fail "$identity_file contains an invalid APP_NODE_ID"
+  chmod 0600 "$identity_file"
 }
 
 [[ -d "$deployment_directory" ]] \
@@ -91,6 +80,7 @@ validate_identity_file() {
 
 if [[ -e "$identity_file" || -L "$identity_file" ]]; then
   validate_identity_file
+  echo "Realtime node identity already exists"
   exit 0
 fi
 
