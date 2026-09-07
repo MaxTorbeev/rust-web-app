@@ -286,14 +286,15 @@ pub fn event_id(transition: &CommittedChannelTransition) -> Uuid {
   event(transition).event_id()
 }
 
+/// `client_id` участников в порядке snapshot — без собственной сортировки:
+/// порядок `(connection_id, client_id)` является контрактом хранилища, и
+/// сценарии полагаются на него, а не на хелпер.
 pub fn client_ids(snapshot: &PresenceSnapshot) -> Vec<String> {
-  let mut ids: Vec<String> = snapshot
+  snapshot
     .members
     .iter()
     .map(|member| member.client_id.clone())
-    .collect();
-  ids.sort();
-  ids
+    .collect()
 }
 
 /// Всё, что должно быть неизменным после отказа или повтора: участники, обе

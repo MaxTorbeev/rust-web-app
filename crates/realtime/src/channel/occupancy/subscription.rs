@@ -1,4 +1,5 @@
 use crate::OccupancyCategory;
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use thiserror::Error;
 
 /// Параметр `ATTACH.params.occupancy`, требующий capability `channel-metadata`.
@@ -7,11 +8,30 @@ pub const OCCUPANCY_PARAM: &str = "occupancy";
 /// Операция capability, необходимая для подписки на Occupancy.
 pub const OCCUPANCY_CAPABILITY_OPERATION: &str = "channel-metadata";
 
+/// Подписка attachment-а на Occupancy.
+///
+/// Сериализуется как canonical wire-значение (`metrics`,
+/// `metrics.presenceMembers`, …) — одна и та же форма в `ATTACHED.params` и в
+/// хранимом attachment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OccupancySubscription {
   Metrics,
   Category(OccupancyCategory),
   Categories(Vec<OccupancyCategory>),
+}
+
+impl Serialize for OccupancySubscription {
+  fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(&self.to_wire_value())
+  }
+}
+
+impl<'de> Deserialize<'de> for OccupancySubscription {
+  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+    let value = String::deserialize(deserializer)?;
+
+    Self::parse(&value).map_err(de::Error::custom)
+  }
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]

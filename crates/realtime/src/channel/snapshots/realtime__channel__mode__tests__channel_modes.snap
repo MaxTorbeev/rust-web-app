@@ -1,0 +1,10 @@
+---
+source: crates/realtime/src/channel/mode.rs
+expression: "ChannelMode::ALL"
+---
+[
+  "subscribe",
+  "publish",
+  "presence",
+  "presenceSubscribe"
+]

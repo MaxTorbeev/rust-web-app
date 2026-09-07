@@ -1,5 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 /// Способ учёта Attachment в состоянии канала.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AttachmentTracking {
   /// Attachment сохраняется как отдельная запись и самостоятельно
   /// участвует в расчёте Occupancy канала.

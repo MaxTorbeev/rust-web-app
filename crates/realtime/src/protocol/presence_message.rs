@@ -30,7 +30,7 @@ impl From<&PresenceMember> for PresenceMessage {
       id: Some(member.last_message_id.clone()),
       client_id: Some(member.client_id.clone()),
       connection_id: Some(member.connection_id.as_str().to_owned()),
-      timestamp: Some(member.updated_at_ms),
+      timestamp: Some(member.updated_at.as_millis()),
       data: member.data.clone(),
     }
   }

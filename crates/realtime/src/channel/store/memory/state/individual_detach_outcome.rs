@@ -2,6 +2,32 @@ use crate::{
   CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, OccupancyChange,
   PresenceChangeAction, PresenceChannelChanged, PresenceMember, PresenceMemberChange,
 };
+use support::timestamp::Timestamp;
+use uuid::Uuid;
+
+/// Server-generated `Leave` для участников, удалённых не клиентской командой
+/// (detach, disconnect, потеря режима `Presence` при повторном attach).
+///
+/// `message_id` имеет вид `server:<eventId>:<index>` и не начинается с
+/// `connection_id` участника, чтобы SDK не принял его за клиентскую операцию.
+pub(super) fn server_leave_changes(
+  event_id: Uuid,
+  removed_members: Vec<PresenceMember>,
+  timestamp: Timestamp,
+) -> Vec<PresenceMemberChange> {
+  removed_members
+    .into_iter()
+    .enumerate()
+    .map(|(index, member)| PresenceMemberChange {
+      action: PresenceChangeAction::Leave,
+      connection_id: member.connection_id,
+      client_id: member.client_id,
+      data: member.data,
+      message_id: format!("server:{event_id}:{index}"),
+      timestamp,
+    })
+    .collect()
+}
 
 /// Результат удаления индивидуального attachment.
 pub(super) enum IndividualDetachOutcome {
@@ -29,23 +55,11 @@ impl IndividualDetachOutcome {
         occupancy_version,
         occupancy_change,
       } => {
-        let event_id = command.event_id;
-
-        let member_changes = removed_members
-          .into_iter()
-          .enumerate()
-          .map(|(index, member)| PresenceMemberChange {
-            action: PresenceChangeAction::Leave,
-            connection_id: member.connection_id,
-            client_id: member.client_id,
-            data: member.data,
-            message_id: format!("server:{event_id}:{index}"),
-            timestamp: command.request_time,
-          })
-          .collect();
+        let member_changes =
+          server_leave_changes(command.event_id, removed_members, command.request_time);
 
         let event = CommittedPresenceEvent::new(
-          event_id,
+          command.event_id,
           PresenceChannelChanged {
             channel: command.channel,
             origin: command.actor.node_instance,

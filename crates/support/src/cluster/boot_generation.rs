@@ -13,6 +13,12 @@ impl BootGeneration {
     Self(fresh_uuid())
   }
 
+  /// Восстанавливает generation из известного UUID — для тестов и чтения
+  /// сохранённых значений.
+  pub const fn from_uuid(value: Uuid) -> Self {
+    Self(value)
+  }
+
   pub fn as_uuid(&self) -> &Uuid {
     &self.0
   }

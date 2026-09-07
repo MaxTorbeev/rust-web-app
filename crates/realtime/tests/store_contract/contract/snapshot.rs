@@ -97,3 +97,43 @@ async fn snapshot_lists_members_of_all_connections(#[case] store: impl ContractS
   );
   assert_eq!(change.occupancy_version, snapshot.occupancy_version);
 }
+
+/// Порядок участников — `(connection_id, client_id)` независимо от порядка
+/// входа и от того, как реализация хранит участников внутри.
+///
+/// Ловит: порядок HashMap/HSCAN, сортировку только по `client_id`
+/// (одноимённые участники разных соединений перемешались бы).
+#[apply(stores)]
+#[tokio::test(flavor = "current_thread")]
+async fn members_are_ordered_by_connection_then_client_id(#[case] store: impl ContractStore) {
+  let store = &store;
+  let (c1, c2) = (Conn::new("conn-1"), Conn::new("conn-2"));
+  let room = channel("room");
+  attach(store, &c1, &room, at(0)).await;
+  attach(store, &c2, &room, at(0)).await;
+
+  // Вход в перемешанном порядке; одинаковые client_id с разных соединений.
+  apply(store, presence_cmd(&c2, &room, 1, vec![enter("zoe", json!(null)), enter("alice", json!(null))], at(1))).await;
+  apply(store, presence_cmd(&c1, &room, 1, vec![enter("mia", json!(null)), enter("alice", json!(null))], at(2))).await;
+
+  let ordered: Vec<(String, String)> = snapshot(store, &room)
+    .await
+    .members
+    .iter()
+    .map(|member| (member.connection_id.as_str().to_owned(), member.client_id.clone()))
+    .collect();
+
+  assert_eq!(
+    ordered,
+    vec![
+      ("conn-1".to_owned(), "alice".to_owned()),
+      ("conn-1".to_owned(), "mia".to_owned()),
+      ("conn-2".to_owned(), "alice".to_owned()),
+      ("conn-2".to_owned(), "zoe".to_owned()),
+    ]
+  );
+
+  // Повторное чтение — тот же порядок.
+  let again: Vec<String> = snapshot(store, &room).await.members.iter().map(|m| m.client_id.clone()).collect();
+  assert_eq!(again, vec!["alice", "mia", "alice", "zoe"]);
+}

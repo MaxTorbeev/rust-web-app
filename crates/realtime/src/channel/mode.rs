@@ -1,6 +1,12 @@
 use crate::ProtocolFlag;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+/// Режим работы соединения с каналом.
+///
+/// Сериализуется camelCase-именем (`subscribe`, `presenceSubscribe`, …) —
+/// так режимы хранятся в attachment.
+#[derive(Debug, Clone, Copy, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ChannelMode {
   Subscribe,
   Publish,
@@ -49,5 +55,15 @@ impl ChannelMode {
     modes
       .iter()
       .fold(ProtocolFlag::empty(), |flags, mode| flags | mode.flag())
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn modes_wire_format() {
+    insta::assert_json_snapshot!("channel_modes", ChannelMode::ALL);
   }
 }

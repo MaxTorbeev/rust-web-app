@@ -83,7 +83,7 @@ impl PresenceBatchPlan {
             data: item.data.clone(),
             last_message_id: message_id.clone(),
             presence_revision: self.presence_revision,
-            updated_at_ms: command.request_time.as_millis(),
+            updated_at: command.request_time,
           },
         );
 

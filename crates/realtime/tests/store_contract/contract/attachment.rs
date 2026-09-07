@@ -154,6 +154,95 @@ async fn reattach_with_different_modes_updates_mode_counters(#[case] store: impl
   assert!(outcome.snapshot.occupancy_version > before.occupancy_version);
 }
 
+/// Повторный attach без режима `Presence` удаляет участников соединения тем же
+/// переходом: server-generated `Leave` по `client_id`, одна ревизия, occupancy
+/// без этих участников. Иначе в канале остался бы участник, которому store не
+/// разрешил бы ни `ENTER`, ни `LEAVE`.
+///
+/// Ловит: замену attachment без чистки участников, событие без `Leave`-дельт,
+/// расхождение `presenceMembers` и `presenceConnections`.
+#[apply(stores)]
+#[tokio::test(flavor = "current_thread")]
+async fn reattach_without_presence_mode_removes_members_with_server_leaves(#[case] store: impl ContractStore) {
+  let store = &store;
+  let (conn, other) = (Conn::new("c1"), Conn::new("c2"));
+  let room = channel("room");
+  attach(store, &conn, &room, at(0)).await;
+  attach(store, &other, &room, at(0)).await;
+  apply(store, presence_cmd(&conn, &room, 1, vec![enter("zoe", json!("z")), enter("adam", json!("a"))], at(1))).await;
+  apply(store, presence_cmd(&other, &room, 1, vec![enter("bob", json!(null))], at(2))).await;
+  let before = snapshot(store, &room).await;
+
+  let command = attach_cmd(&conn, &room, &[ChannelMode::Subscribe, ChannelMode::PresenceSubscribe], at(3));
+  let candidate = command.event_id;
+  let outcome = store.attach_and_snapshot(command).await.expect("re-attach must succeed");
+
+  let change = event(&outcome.transition).change();
+  assert_eq!(event_id(&outcome.transition), candidate);
+  assert_eq!(change.presence_revision, Some(before.presence_revision + 1), "one revision for the whole removal");
+
+  let leaves: Vec<_> = change.member_changes.iter().map(|delta| (delta.action, delta.client_id.as_str())).collect();
+  assert_eq!(leaves, vec![(PresenceChangeAction::Leave, "adam"), (PresenceChangeAction::Leave, "zoe")]);
+  for (index, delta) in change.member_changes.iter().enumerate() {
+    assert_eq!(delta.message_id, format!("server:{candidate}:{index}"));
+    assert_eq!(delta.connection_id.as_str(), conn.id());
+  }
+  assert_eq!(change.member_changes[0].data, Some(json!("a")));
+
+  let after = &outcome.snapshot;
+  assert_eq!(client_ids(after), vec!["bob"], "only the other connection's member survives");
+  assert_eq!(after.occupancy.connections, 2, "the connection stays attached");
+  assert_eq!(after.occupancy.presence_connections, 1);
+  assert_eq!(after.occupancy.presence_members, 1);
+  assert_eq!(after.presence_revision, before.presence_revision + 1);
+  let occupancy = change.occupancy.as_ref().expect("removal must report occupancy");
+  assert_eq!(occupancy.metrics, after.occupancy);
+  assert!(occupancy.changed_categories.contains(&OccupancyCategory::PresenceMembers));
+  assert!(occupancy.changed_categories.contains(&OccupancyCategory::PresenceConnections));
+
+  // Теперь ENTER этим соединением отклоняется — состояние согласовано с режимом.
+  let receipt = apply(store, presence_cmd(&conn, &room, 2, vec![enter("zoe", json!(null))], at(4))).await;
+  assert_eq!(rejected(&receipt), &realtime::PresenceRejection::PresenceModeNotEnabled);
+}
+
+/// Повторный attach, сохраняющий режим `Presence`, участников не трогает, даже
+/// если другие режимы изменились: событие несёт только occupancy.
+///
+/// Ловит: удаление участников при любом изменении режимов.
+#[apply(stores)]
+#[tokio::test(flavor = "current_thread")]
+async fn reattach_keeping_presence_mode_keeps_members(#[case] store: impl ContractStore) {
+  let store = &store;
+  let conn = Conn::new("c1");
+  let room = channel("room");
+  attach(store, &conn, &room, at(0)).await;
+  apply(store, presence_cmd(&conn, &room, 1, vec![enter("alice", json!(1))], at(1))).await;
+  let before = snapshot(store, &room).await;
+
+  // Теряем PresenceSubscribe и Publish, но не Presence.
+  let outcome = store
+    .attach_and_snapshot(attach_cmd(&conn, &room, &[ChannelMode::Subscribe, ChannelMode::Presence], at(2)))
+    .await
+    .expect("re-attach must succeed");
+
+  let change = event(&outcome.transition).change();
+  assert_eq!(change.presence_revision, None, "members untouched: no presence revision");
+  assert!(change.member_changes.is_empty());
+  assert_eq!(client_ids(&outcome.snapshot), vec!["alice"]);
+  assert_eq!(outcome.snapshot.presence_revision, before.presence_revision);
+  assert_eq!(outcome.snapshot.members[0].data, Some(json!(1)));
+
+  // Без участников потеря Presence — обычное occupancy-изменение без ревизии.
+  let (loner, quiet) = (Conn::new("c2"), channel("quiet"));
+  attach(store, &loner, &quiet, at(3)).await;
+  let outcome = store
+    .attach_and_snapshot(attach_cmd(&loner, &quiet, &[ChannelMode::Subscribe], at(4)))
+    .await
+    .expect("re-attach must succeed");
+  assert_eq!(event(&outcome.transition).change().presence_revision, None);
+  assert!(event(&outcome.transition).change().member_changes.is_empty());
+}
+
 /// Агрегированный учёт и канал другого приложения отклоняются до изменения
 /// состояния.
 #[apply(stores)]
@@ -527,4 +616,31 @@ async fn counters_return_to_zero_and_versions_never_repeat(#[case] store: impl C
     "occupancy versions must strictly increase: {versions:?}"
   );
   assert_eq!(*versions.last().unwrap(), after.occupancy_version);
+}
+
+/// Attachment без единого режима отклоняется на границе store до изменения
+/// состояния: он не мог бы ни читать, ни писать, ни участвовать в Presence, но
+/// считался бы в `connections`.
+///
+/// Заявленный ранее сценарий «detach такого attachment меняет состояние и
+/// возвращает ошибку» не воспроизводился: `connections` начисляется независимо
+/// от режимов, поэтому detach всегда даёт occupancy-изменение и не падает.
+/// Проверка нужна ради смысла метрик, а не ради этого сценария.
+#[apply(stores)]
+#[tokio::test(flavor = "current_thread")]
+async fn attach_without_modes_is_rejected_before_any_change(#[case] store: impl ContractStore) {
+  let store = &store;
+  let conn = Conn::new("c1");
+  let room = channel("room");
+
+  let result = store.attach_and_snapshot(attach_cmd(&conn, &room, &[], at(0))).await;
+  assert!(matches!(result, Err(ChannelStateStoreError::InvalidRequest { .. })), "{result:?}");
+
+  let untouched = snapshot(store, &room).await;
+  assert_eq!(untouched.occupancy.connections, 0);
+  assert_eq!(untouched.occupancy_version, 0);
+
+  // Соединение не попало в обратный индекс: disconnect не находит каналов.
+  let transitions = store.disconnect(disconnect_cmd(&conn, at(1))).await.expect("disconnect must succeed");
+  assert!(transitions.is_empty(), "{transitions:?}");
 }

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::{Attachment, ChannelMode, ChannelStateStoreError, CommittedChannelTransition, ConnectionId, OccupancyChange, OccupancyMetrics, PresenceBatchCommand, PresenceMember, PresenceMutationOutcome, PresenceRejection, PresenceSnapshot};
 use crate::connection::ConnectionActor;
-use super::{IndividualDetachOutcome, PresenceBatchPlan};
+use super::{AttachmentSaved, IndividualDetachOutcome, PresenceBatchPlan};
 
 /// Внутреннее состояние одного канала в локальном хранилище.
 #[derive(Default)]
@@ -63,13 +63,22 @@ impl ChannelState {
   }
 
   /// Создаёт snapshot текущего состояния Presence и Occupancy.
+  ///
+  /// Участники отсортированы по `(connection_id, client_id)` — контракт
+  /// хранилища: HashMap не гарантирует порядок, а snapshot должен быть
+  /// одинаковым между вызовами и реализациями.
   pub(super) fn snapshot(&self) -> PresenceSnapshot {
-    let members = self
+    let mut members: Vec<PresenceMember> = self
       .members
       .values()
       .flat_map(|members| members.values())
       .cloned()
       .collect();
+
+    members.sort_by(|left, right| {
+      (left.connection_id.as_str(), left.client_id.as_str())
+        .cmp(&(right.connection_id.as_str(), right.client_id.as_str()))
+    });
 
     PresenceSnapshot {
       members,
@@ -81,30 +90,62 @@ impl ChannelState {
 
   /// Сохраняет или обновляет attachment соединения.
   ///
-  /// Возвращает изменение Occupancy, если сохранение повлияло на метрики канала.
+  /// Повторный attach заменяет attachment. Если при этом соединение теряет
+  /// режим `Presence`, его участники удаляются тем же переходом и возвращаются
+  /// в `removed_members` для публикации server-generated `Leave`.
   pub(super) fn save_attachment(
     &mut self,
     attachment: Attachment,
-  ) -> Result<Option<OccupancyChange>, ChannelStateStoreError> {
+  ) -> Result<AttachmentSaved, ChannelStateStoreError> {
     self.validate_attachment(&attachment)?;
+
+    let connection_id = attachment.connection_id.clone();
+
+    let loses_presence = self
+      .attachments
+      .get(&connection_id)
+      .is_some_and(|previous| previous.has_mode(ChannelMode::Presence))
+      && !attachment.has_mode(ChannelMode::Presence);
+    let has_members = self
+      .members
+      .get(&connection_id)
+      .is_some_and(|members| !members.is_empty());
+    let removes_members = loses_presence && has_members;
 
     // Переполнение проверяется до изменения состояния, как и в остальных
     // операциях: после проверки фиксация не может завершиться ошибкой.
+    let next_presence_revision = if removes_members {
+      Some(self.next_presence_revision()?)
+    } else {
+      None
+    };
     let next_occupancy_version = self.next_occupancy_version()?;
 
     let before = self.occupancy();
 
-    self
-      .attachments
-      .insert(attachment.connection_id.clone(), attachment);
+    self.attachments.insert(connection_id.clone(), attachment);
 
-    let change = OccupancyChange::between(before, self.occupancy());
+    let removed_members = if removes_members {
+      self.remove_members(&connection_id)
+    } else {
+      Vec::new()
+    };
 
-    if change.is_some() {
+    if let Some(revision) = next_presence_revision {
+      self.presence_revision = revision;
+    }
+
+    let occupancy_change = OccupancyChange::between(before, self.occupancy());
+
+    if occupancy_change.is_some() {
       self.occupancy_version = next_occupancy_version;
     }
 
-    Ok(change)
+    Ok(AttachmentSaved {
+      occupancy_change,
+      removed_members,
+      presence_revision: next_presence_revision,
+    })
   }
 
   /// Применяет batch клиентских Presence-действий одного соединения.

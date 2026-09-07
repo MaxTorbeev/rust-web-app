@@ -313,7 +313,7 @@ struct PresenceMember {
     data: Option<serde_json::Value>,
     last_message_id: String,
     presence_revision: u64,
-    updated_at_ms: u64,
+    updated_at: Timestamp,
 }
 
 struct Attachment {
@@ -473,7 +473,11 @@ Normalized payload и typed `PresenceMutationOutcome` хранятся вмес�
 
 `ATTACH` не использует этот ledger: повторный attach естественно
 идемпотентен по `(application_id, channel, connection_id)`, не увеличивает
-counters и возвращает свежий snapshot. Повторный `DETACH` является успешным
+counters и возвращает свежий snapshot. Повторный attach с другими effective
+modes заменяет attachment; если соединение при этом теряет режим `presence`,
+его members удаляются тем же атомарным transition с server-generated `Leave`
+и одной `presence_revision` — иначе в канале остался бы member, которому store
+не разрешил бы ни `ENTER`, ни `LEAVE`. Повторный `DETACH` является успешным
 idempotent cleanup.
 
 Идентичность события фиксируется до вызова хранилища. Каждая команда store
@@ -633,7 +637,11 @@ Redis-значениям: `{"rejected": {"clientIdNotAllowed": {"clientId": ".."
 `{"committed": {"changed": {"eventId": .., "change": {..}}}}`. Исключения —
 только внешние контракты с фиксированными именами (JWT claims `x-ably-*`,
 query-параметр `access_token`) и файлы конфигурации. Формат хранимых типов
-фиксируется тестами канонического JSON.
+(`Attachment`, `PresenceMember`, `PresenceSnapshot`, `PresenceMutationOutcome`,
+`ChannelMode`, `AttachmentTracking`) зафиксирован `insta`-эталонами в каталогах
+`snapshots/` рядом с типами; `OccupancySubscription` сериализуется тем же
+canonical string, что уходит в `ATTACHED.params`. Изменение формата — это
+осознанное обновление эталона в code review, а не побочный эффект правки типа.
 
 Для каждой зафиксированной `presence_revision` создаётся ровно один canonical
 `PresenceChannelChanged` с `DeliveryClass::AllNodes`. Точные identified
@@ -1325,7 +1333,9 @@ test suite. Остальные этапы впереди.
 - duplicate attach не удваивает counters;
 - detach удаляет members attachment-а;
 - disconnect очищает все channels connection-а;
-- snapshot содержит только `Present`;
+- snapshot содержит только `Present`, участники отсортированы по
+  `(connection_id, client_id)` — порядок одинаков между вызовами и
+  реализациями;
 - counters не уходят ниже нуля;
 - одна `presence_revision` создаёт один Presence event;
 - memory commit возвращает canonical event, проходит через общий projector и

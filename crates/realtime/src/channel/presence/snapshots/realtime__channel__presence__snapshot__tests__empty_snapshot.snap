@@ -1,0 +1,17 @@
+---
+source: crates/realtime/src/channel/presence/snapshot.rs
+expression: snapshot
+---
+{
+  "members": [],
+  "presenceRevision": 0,
+  "occupancyVersion": 0,
+  "occupancy": {
+    "connections": 0,
+    "publishers": 0,
+    "subscribers": 0,
+    "presenceConnections": 0,
+    "presenceSubscribers": 0,
+    "presenceMembers": 0
+  }
+}

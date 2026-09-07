@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use support::timestamp::Timestamp;
 use super::channel::ChannelState;
 use super::IndividualDetachOutcome;
-use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, CommittedPresenceEvent, DetachCommand, PresenceBatchCommand, PresenceChannelChanged, PresenceMutationOutcome, PresenceMutationReceipt, PresenceRejection, PresenceSnapshot};
+use crate::{AttachCommand, AttachmentTracking, ChannelAttachOutcome, ChannelKey, ChannelStateStoreError, CommittedChannelTransition, DetachCommand, PresenceBatchCommand, PresenceMutationOutcome, PresenceMutationReceipt, PresenceRejection, PresenceSnapshot};
 use crate::channel::presence::{LedgerLookup, PresenceLedgerPolicy, PresenceOperationLedger, PresenceOperationRecord};
 use crate::connection::{ConnectionKey, DisconnectConnectionCommand};
 
@@ -63,6 +63,15 @@ impl MemoryStoreState {
       });
     }
 
+    // Attachment без единого режима не может ни читать, ни писать, ни
+    // участвовать в Presence, но считался бы в `connections`. Транспорт такие
+    // attach отклоняет сам; граница store не полагается на это.
+    if command.effective_modes.is_empty() {
+      return Err(ChannelStateStoreError::InvalidRequest {
+        message: "attachment requires at least one effective mode".to_owned(),
+      });
+    }
+
     if !command.channel.belongs_to_application(&command.actor.application_id) {
       return Err(ChannelStateStoreError::InvalidRequest {
         message: "channel and connection belong to different applications".to_owned(),
@@ -93,31 +102,9 @@ impl MemoryStoreState {
       .entry(channel.clone())
       .or_default();
 
-    let occupancy_change = channel_state.save_attachment(command.to_attachment())?;
-
+    let saved = channel_state.save_attachment(command.to_attachment())?;
     let snapshot = channel_state.snapshot();
-
-    let event = occupancy_change.map(|occupancy| {
-      CommittedPresenceEvent::new(
-        command.event_id,
-        PresenceChannelChanged {
-          channel: channel.clone(),
-          origin: command.actor.node_instance,
-          presence_revision: None,
-          occupancy_version: snapshot.occupancy_version,
-          member_changes: Vec::new(),
-          occupancy: Some(occupancy),
-          occurred_at: command.request_time,
-        },
-      )
-    });
-
-    let transition = match event {
-      Some(event) => CommittedChannelTransition::Changed(event),
-      None => CommittedChannelTransition::Unchanged {
-        occupancy_version: snapshot.occupancy_version,
-      },
-    };
+    let transition = saved.into_transition(&command, snapshot.occupancy_version);
 
     self
       .connection_channels

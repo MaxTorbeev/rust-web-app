@@ -92,7 +92,7 @@ async fn enter_commits_one_delta_with_stable_message_id(#[case] store: impl Cont
   assert_eq!(member.client_id, "alice");
   assert_eq!(member.last_message_id, delta.message_id);
   assert_eq!(member.presence_revision, after.presence_revision);
-  assert_eq!(member.updated_at_ms, at(1).as_millis());
+  assert_eq!(member.updated_at, at(1));
 }
 
 /// UPDATE меняет данные и ревизию, но не число участников: occupancy не меняется
