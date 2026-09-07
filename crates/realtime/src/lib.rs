@@ -13,7 +13,7 @@ pub use self::transport::*;
 pub use application::*;
 pub use channel::*;
 pub use config::*;
-pub use connection::{Connection, ConnectionId};
+pub use connection::{Connection, ConnectionActor, ConnectionId, DisconnectConnectionCommand};
 pub use events::*;
 pub use http::*;
 pub use realtime::*;

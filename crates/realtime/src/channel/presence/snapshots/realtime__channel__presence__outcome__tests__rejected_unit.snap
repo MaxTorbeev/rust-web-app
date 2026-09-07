@@ -1,0 +1,7 @@
+---
+source: crates/realtime/src/channel/presence/outcome.rs
+expression: unit
+---
+{
+  "rejected": "notAttached"
+}

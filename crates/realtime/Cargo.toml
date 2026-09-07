@@ -27,4 +27,9 @@ thiserror = "2"
 
 [dev-dependencies]
 tokio = { version = "1.52.3", features = ["net", "test-util"] }
+rstest = "0.27"
+rstest_reuse = "0.7"
+proptest = "1"
+pretty_assertions = "1"
+insta = { version = "1", features = ["json"] }
 tokio-tungstenite = "0.29"

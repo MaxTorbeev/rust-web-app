@@ -1,0 +1,11 @@
+---
+source: crates/realtime/src/channel/presence/outcome.rs
+expression: with_payload
+---
+{
+  "rejected": {
+    "clientIdNotAllowed": {
+      "clientId": "client-1"
+    }
+  }
+}

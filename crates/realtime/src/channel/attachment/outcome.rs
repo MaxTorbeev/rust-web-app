@@ -5,6 +5,7 @@ use crate::{CommittedChannelTransition, PresenceSnapshot};
 /// Хранилище сохраняет attachment и возвращает состояние канала после этой
 /// операции. Сам attachment не возвращается: вызывающий построил его из
 /// команды и ничего нового о нём от хранилища не узнаёт.
+#[derive(Debug)]
 pub struct ChannelAttachOutcome {
   /// Снимок Presence и Occupancy после сохранения attachment.
   pub snapshot: PresenceSnapshot,

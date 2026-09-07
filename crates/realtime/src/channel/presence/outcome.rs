@@ -63,25 +63,23 @@ mod tests {
   use serde_json::json;
   use uuid::Uuid;
 
-  /// Формат результата операции — это формат журнала дедупликации и будущего
-  /// Redis-хранилища: wire-соглашение `camelCase` для полей и вариантов.
+  // Формат результата операции — это формат журнала дедупликации и будущего
+  // Redis-хранилища. Эталоны лежат в `snapshots/` рядом с этим файлом: любое
+  // изменение сериализации видно как diff эталона, а не как упавший assert на
+  // одно поле. Обновление — `cargo insta review` после осознанного изменения.
+
   #[test]
-  fn rejected_outcome_uses_camel_case_wire_format() {
-    let outcome = PresenceMutationOutcome::Rejected(PresenceRejection::ClientIdNotAllowed {
+  fn rejected_outcome_wire_format() {
+    let with_payload = PresenceMutationOutcome::Rejected(PresenceRejection::ClientIdNotAllowed {
       client_id: "client-1".to_owned(),
     });
+    let unit = PresenceMutationOutcome::Rejected(PresenceRejection::NotAttached);
 
-    let encoded = serde_json::to_value(&outcome).unwrap();
+    insta::assert_json_snapshot!("rejected_with_payload", with_payload);
+    insta::assert_json_snapshot!("rejected_unit", unit);
 
-    assert_eq!(
-      encoded,
-      json!({ "rejected": { "clientIdNotAllowed": { "clientId": "client-1" } } }),
-    );
-
-    let unit = serde_json::to_value(PresenceMutationOutcome::Rejected(PresenceRejection::NotAttached)).unwrap();
-    assert_eq!(unit, json!({ "rejected": "notAttached" }));
-
-    let decoded: PresenceMutationOutcome = serde_json::from_value(encoded).unwrap();
+    let decoded: PresenceMutationOutcome =
+      serde_json::from_value(serde_json::to_value(&with_payload).unwrap()).unwrap();
     assert!(matches!(
       decoded,
       PresenceMutationOutcome::Rejected(PresenceRejection::ClientIdNotAllowed { client_id }) if client_id == "client-1"
@@ -89,7 +87,7 @@ mod tests {
   }
 
   #[test]
-  fn committed_outcome_uses_camel_case_wire_format() {
+  fn committed_outcome_wire_format() {
     let event_id = Uuid::parse_str("a15bb6d5-51ea-47db-a9a5-08b41b3b2d91").unwrap();
     let change: PresenceChannelChanged = serde_json::from_value(json!({
       "channel": { "applicationId": "application-1", "channel": "room-1" },
@@ -128,15 +126,15 @@ mod tests {
       CommittedPresenceEvent::new(event_id, change),
     ));
 
-    let encoded = serde_json::to_value(&outcome).unwrap();
-    let event = &encoded["committed"]["changed"];
+    insta::assert_json_snapshot!("committed_changed", outcome);
 
-    assert_eq!(event["eventId"], json!("a15bb6d5-51ea-47db-a9a5-08b41b3b2d91"));
-    assert_eq!(event["change"]["memberChanges"][0]["messageId"], json!("connection-1:7:0"));
-    assert_eq!(event["change"]["occupancy"]["changedCategories"], json!(["presenceMembers"]));
-
-    // Ни одного snake_case ключа быть не должно.
-    let text = encoded.to_string();
-    assert!(!text.contains('_'), "unexpected snake_case key in {text}");
+    // Обратное чтение: то, что записано в журнал, читается без потерь.
+    let decoded: PresenceMutationOutcome =
+      serde_json::from_value(serde_json::to_value(&outcome).unwrap()).unwrap();
+    let PresenceMutationOutcome::Committed(transition) = decoded else {
+      panic!("committed outcome must survive serialization");
+    };
+    assert_eq!(transition.event().unwrap().event_id(), event_id);
+    assert_eq!(transition.presence_revision(), Some(3));
   }
 }
