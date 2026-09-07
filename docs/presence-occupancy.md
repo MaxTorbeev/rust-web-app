@@ -55,8 +55,6 @@ Ably-compatible realtime-профиль для Pub/Sub и Presence из шест
 
 - Occupancy-проекция: события с `occupancy` создаются, но initial
   `[meta]occupancy` и изменения счётчиков клиентам не доставляются;
-- идемпотентность `InProcessChannelCommitDelivery` по `event_id`: повтор
-  mutation после потерянного `ACK` повторно рассылает deltas;
 - capability check для publish обычного `MESSAGE`;
 - contract test suite store; aggregated attachments (`AttachmentTracking::Aggregated`
   отклоняется memory store); Redis store, outbox publisher, leases, reaper,
@@ -417,8 +415,13 @@ trait ChannelCommitDelivery {
 синхронно передаёт его в local projector. `RedisOutboxChannelCommitDelivery`
 принимает receipt атомарного store commit, который по контракту уже означает
 запись event в outbox, и не публикует его отдельно. Ошибка local delivery не
-превращает committed mutation в новую: retry получает прежний outcome и повторяет
-доставку того же event ID.
+превращает committed mutation в новую: retry получает прежний outcome с тем же
+event ID. Контракт `ChannelCommitDelivery` разделяет ответственность: сервисы
+передают каждый зафиксированный переход не более одного раза (воспроизведённый
+результат повторной команды в delivery не попадает — событие уже было передано
+при первой обработке), а реализация вправе считать каждый вызов новым событием.
+Дедупликация повторов транспорта по event ID — обязанность потребителя outbox
+в Redis-режиме, не delivery.
 
 Команда содержит:
 
