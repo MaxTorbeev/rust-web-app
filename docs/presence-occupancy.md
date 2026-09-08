@@ -56,9 +56,21 @@ Ably-compatible realtime-профиль для Pub/Sub и Presence из шест
 - Occupancy-проекция: события с `occupancy` создаются, но initial
   `[meta]occupancy` и изменения счётчиков клиентам не доставляются;
 - capability check для publish обычного `MESSAGE`;
-- contract test suite store; aggregated attachments (`AttachmentTracking::Aggregated`
-  отклоняется memory store); Redis store, outbox publisher, leases, reaper,
-  cluster projector.
+- aggregated attachments (`AttachmentTracking::Aggregated` отклоняется memory
+  store); Redis store, outbox publisher, reaper, cluster projector.
+
+Из Redis-этапа готов примитив lease — крейт `redis-lease`: `acquire`/`renew`/
+`release` с монотонным fence на Lua поверх TTL Redis, публичный формат значения
+`lease:<owner>:<fence>` и Lua-фрагмент `holds_lease` для встраивания проверки
+владения в transition-скрипты хранилища. Единица владения — период: `acquire`
+выдаёт `LeaseToken` (ключ, владелец, fence), и именно его сверяют `renew`,
+`release` и `holds_lease`. Владелец один во всех своих периодах, token у
+каждого периода свой, поэтому отложенный повтор `release` или работа из
+прошлого периода не задевают новый lease того же владельца; повтор `acquire` в
+непрерывном периоде возвращает тот же token. Ключ и владелец для примитива
+непрозрачны: один и тот же крейт обслуживает lease экземпляра ноды, publish
+lease outbox-а и cleanup lock reaper-а. Покрыт live-тестами
+(`REDIS_LEASE_TEST_PORT`).
 
 `POST /auth/realtime/{application_id}/token` остаётся временным application
 API: он принимает только `clientId`, возвращает внутренний `ApiResponse` и
@@ -299,15 +311,20 @@ mutations. `Bound` содержит непустой нормализованн�
 Основные типы:
 
 ```rust
-struct PresenceOwner {
+/// Конкретный запуск ноды (`support::NodeInstance`): `node_id` стабилен для
+/// ноды, `boot_generation` меняется на каждом старте процесса. Именно эта пара
+/// владеет attachments и members и держит lease; `started_at` — метаданные
+/// запуска, в сравнении владения не участвует.
+struct NodeInstance {
     node_id: NodeId,
     boot_generation: BootGeneration,
+    started_at: Timestamp,
 }
 
 struct PresenceMember {
     connection_id: ConnectionId,
     client_id: String,
-    owner: PresenceOwner,
+    node_instance: NodeInstance,
     data: Option<serde_json::Value>,
     last_message_id: String,
     presence_revision: u64,
@@ -316,8 +333,9 @@ struct PresenceMember {
 
 struct Attachment {
     connection_id: ConnectionId,
-    owner: PresenceOwner,
-    effective_modes: EffectiveChannelModes,
+    node_instance: NodeInstance,
+    accounting: AttachmentTracking,
+    effective_modes: Vec<ChannelMode>,
     occupancy: Option<OccupancySubscription>,
 }
 
@@ -498,8 +516,8 @@ idempotent cleanup.
 никуда не записывается и конфликтов не создаёт.
 
 Запись `PresenceMutationOutcome` хранится до authoritative disconnect
-connection-а. Пока connection жив, TTL ledger продлевается вместе с owner lease
-и не может истечь. Disconnect и reaper помечают ledger закрытым, но удаляют его
+connection-а. Пока connection жив, TTL ledger продлевается вместе с lease
+экземпляра ноды и не может истечь. Disconnect и reaper помечают ledger закрытым, но удаляют его
 только после safety TTL, не меньшего максимального поддерживаемого окна
 retry/resume. Иначе поздний повтор того же `msgSerial` создаст новую revision.
 
@@ -569,8 +587,8 @@ encoding. Необработанные имена channel не использу�
 
 Точный Presence Lua transition атомарно:
 
-1. для клиентской команды проверяет действующий owner lease и точную
-   `boot_generation`;
+1. для клиентской команды проверяет действующий lease экземпляра ноды и
+   точную `boot_generation`;
 2. проверяет operation dedup и normalized request hash;
 3. валидирует attachment и предыдущее member state;
 4. меняет attachment/member и reverse indexes;
@@ -624,10 +642,10 @@ V1 предполагает один логический Redis primary, на к
 доступ ко всем перечисленным ключам. Redis Cluster потребует отдельного дизайна
 hash slots либо partitioned outbox.
 
-Reaper не проходит через проверку lease уже умершего owner-а. Для него
+Reaper не проходит через проверку lease уже умершего экземпляра ноды. Для него
 существует отдельный fenced `reap_generation` transition: он проверяет lease
 самого reaper-а, cleanup token, истёкший deadline целевой generation и точное
-совпадение owner каждой удаляемой записи. Изменение channel state и outbox при
+совпадение `node_instance` каждой удаляемой записи. Изменение channel state и outbox при
 этом остаются атомарными и используют тот же canonical event format.
 
 ## Canonical Presence event и coalesced Occupancy event
@@ -657,7 +675,7 @@ attachments создаётся latest-wins Occupancy snapshot с отдельн�
 struct PresenceChannelChanged {
     application_id: ApplicationId,
     channel: String,
-    origin: PresenceOwner,
+    origin: NodeInstance,
     presence_revision: Option<u64>,
     occupancy_version: u64,
     presence_deltas: Vec<PresenceDelta>,
@@ -898,7 +916,8 @@ cleanup удаляет authoritative attachment.
 ## Leases, fencing и reaper
 
 `APP_NODE_ID` стабилен для ноды. Каждый старт процесса создаёт случайный
-`boot_generation`. Owner любого attachment/member:
+`boot_generation`. Attachment и member принадлежат конкретному экземпляру ноды
+(`node_instance`), который идентифицируется парой:
 
 ```text
 (node_id, boot_generation)
@@ -935,14 +954,14 @@ Reaper:
    целевой generation;
 4. обрабатывает connections ограниченными batch;
 5. перед каждым batch проверяет cleanup token и удаляет только записи с точным
-   owner match;
+   совпадением `node_instance`;
 6. для exact members создаёт leave transitions через тот же Lua и outbox, а
    aggregated occupancy shards удаляет целиком и помечает channel dirty;
 7. удаляет generation indexes после завершения.
 
 Новая generation с тем же node ID не может быть удалена reaper-ом старой
 generation и не блокирует cleanup старой: у каждой generation отдельный ZSET
-member и owner index. Renewal старой generation, успевший до cleanup, сдвигает
+member и индекс экземпляра ноды. Renewal старой generation, успевший до cleanup, сдвигает
 deadline, а reaper обязан увидеть это при повторной проверке. Штатные `LEAVE`,
 `DETACH`, disconnect и drain выполняют cleanup немедленно; lease expiry является
 аварийной границей.

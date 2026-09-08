@@ -14,7 +14,9 @@ Presence и Occupancy вынесены в отдельный целевой ди
 - кластерный provider связывает `EventBus` с `JetStreamEventPublisher`, отдельным
   durable pull consumer ноды и Redis-дедупликацией; consumer loop supervised;
 - `ChannelMessageSubmitted` уже публикуется с `DeliveryClass::AllNodes`;
-- `ChannelHub` и `PresenceHub` хранят только локальное состояние одного узла WebSocket-сервера;
+- `ChannelRouter` доставляет кадры только в WebSocket-соединения одного узла;
+  состояние каналов и Presence хранит `MemoryChannelStore` — process-local
+  реализация контрактов `AttachmentStore` и `PresenceStore`;
 - `compose.yml` запускает standalone NATS с JetStream для single-host topology.
 
 Полный горизонтальный production-режим нельзя считать готовым до реализации
@@ -28,7 +30,7 @@ Presence и Occupancy вынесены в отдельный целевой ди
 - не добавлять проверки режима в обработчики HTTP и WebSocket;
 - дать `realtime`, `auth` и будущим пакетам единый типизированный интерфейс событий;
 - использовать JetStream для надёжной межузловой доставки с ACK, повторными попытками и дедупликацией;
-- сохранить `ChannelHub` локальной точкой доставки в WebSocket-соединения конкретного узла;
+- сохранить `ChannelRouter` локальной точкой доставки в WebSocket-соединения конкретного узла;
 - обеспечить общий снимок состояния присутствия и очистку после аварийного завершения узла.
 
 ## Основные компоненты
@@ -113,13 +115,13 @@ dispatch = применить уже принятое событие на тек
 
 `dispatch` никогда не публикует входящее событие обратно в NATS. Это предотвращает бесконечный цикл.
 
-### `ChannelHub`
+### `ChannelRouter`
 
 Всегда остаётся локальным. Он знает только о WebSocket-соединениях текущего процесса и кладёт подготовленные кадры в их локальные исходящие очереди.
 
-NATS не заменяет `ChannelHub`. NATS доставляет одно событие каждому серверному узлу, а `ChannelHub` каждого узла доставляет его только своим клиентам.
+NATS не заменяет `ChannelRouter`. NATS доставляет одно событие каждому серверному узлу, а `ChannelRouter` каждого узла доставляет его только своим клиентам.
 
-Текущий контракт `ChannelHub::broadcast` различает успешную доставку и ошибку:
+Текущий контракт `ChannelRouter::broadcast` различает успешную доставку и ошибку:
 
 ```rust
 Result<BroadcastOutcome, BroadcastError>
@@ -127,12 +129,24 @@ Result<BroadcastOutcome, BroadcastError>
 
 Отсутствие локальных получателей является успешным результатом. Переполненная очередь отдельного медленного клиента приводит к отключению этого клиента, но не должна вызывать повторную доставку события всем остальным подключённым клиентам. Ошибка подготовки общего кадра является ошибкой обработчика и запрещает ACK потребителя.
 
-### Presence boundary
+### Граница состояния канала
 
-Сейчас отдельного `PresenceStore` нет: `PresenceHub` является process-local
-частью каждого `RealtimeApplication`. Целевая граница store, Redis authoritative
-state, leases, outbox и Ably-compatible Occupancy описаны в документе
-[Кластерный Presence и Ably-compatible Occupancy](./presence-occupancy.md).
+Authoritative состояние канала — attachments, Presence members, operation
+ledger и версии Occupancy — живёт за контрактами `AttachmentStore` и
+`PresenceStore`. Сейчас их единственная реализация — process-local
+`MemoryChannelStore`. `AttachmentService` и `PresenceService` применяют команды к
+store и передают каждый committed переход в `ChannelCommitDelivery`; в
+автономном режиме это `InProcessChannelCommitDelivery`, которая синхронно
+проецирует `PRESENCE` deltas в `ChannelRouter`. `RealtimeApplication::new`
+собирает именно этот набор, `RealtimeApplication::with_services` принимает
+внешне собранные store и delivery.
+
+Целевые Redis authoritative state, leases, outbox и Ably-compatible Occupancy
+описаны в документе
+[Кластерный Presence и Ably-compatible Occupancy](./presence-occupancy.md):
+`RedisChannelStore` встаёт за те же контракты вместо `MemoryChannelStore`, а
+committed переходы доставляются через durable outbox вместо
+`InProcessChannelCommitDelivery`.
 
 NATS переносит изменения между нодами, но не заменяет authoritative snapshot и
 не может самостоятельно очистить state аварийно завершившейся ноды.
@@ -170,12 +184,14 @@ EVENT_BUS_DRIVER=local
 
 Настройки NATS в этом режиме не читаются, и NATS для запуска не требуется.
 
-Presence использует текущий process-local `PresenceHub`. Целевая настройка
-`PRESENCE_STORE_DRIVER=memory|redis` ещё не реализована.
+Состояние каналов и Presence хранит process-local `MemoryChannelStore`. Целевая
+настройка `PRESENCE_STORE_DRIVER=memory|redis` ещё не реализована.
 
 ### Запуск
 
-1. Создать `Realtime` с локальными `ChannelHub` и `PresenceHub`.
+1. Создать `Realtime::from_config`: для каждого приложения
+   `RealtimeApplication::new` собирает `ChannelRouter`, `MemoryChannelStore` и
+   `InProcessChannelCommitDelivery`.
 2. Создать `EventDispatcher`.
 3. Зарегистрировать типизированные обработчики, использующие `Realtime`.
 4. Создать `LocalEventPublisher`, использующий тот же `EventDispatcher`.
@@ -203,7 +219,7 @@ EventDispatcher::dispatch
 типизированный обработчик
         │
         ▼
-локальный ChannelHub
+локальный ChannelRouter
         │
         ▼
 локальные очереди WebSocket
@@ -211,13 +227,15 @@ EventDispatcher::dispatch
 
 `LocalEventPublisher` не содержит отдельной бизнес-логики: он передаёт `EventMessage` тому же `EventDispatcher`, которым будет пользоваться потребитель NATS.
 
-Успешная локальная публикация означает, что обязательный обработчик завершился и `ChannelHub` принял кадры в локальные очереди. Это не подтверждает фактическую запись всех кадров в TCP-соединения или обработку сообщений клиентами.
+Успешная локальная публикация означает, что обязательный обработчик завершился и `ChannelRouter` принял кадры в локальные очереди. Это не подтверждает фактическую запись всех кадров в TCP-соединения или обработку сообщений клиентами.
 
 ### Присутствие
 
-`enter`, `update`, `leave` и snapshot применяются к process-local
-`PresenceHub`. Для одного автономного процесса это согласованная модель; при его
-остановке state исчезает. Lease и межузловая доставка в этом профиле не нужны.
+`ENTER`, `UPDATE`, `LEAVE` и snapshot проходят через `PresenceService` в
+process-local `MemoryChannelStore`; committed deltas доставляются локальным
+соединениям через `InProcessChannelCommitDelivery` и `ChannelRouter`. Для одного
+автономного процесса это согласованная модель; при его остановке state исчезает.
+Lease и межузловая доставка в этом профиле не нужны.
 
 ## Кластерный режим
 
@@ -260,9 +278,10 @@ JetStream topology, собирает `JetStreamEventPublisher`, отдельны
 consumer ноды, Redis dedup и обработчики. HTTP server и consumer loop
 supervised одновременно; readiness является traffic gate.
 
-Завершение consumer loop или HTTP server завершает общий runtime. Presence при
-этом пока создаётся с локальным `PresenceHub`; Redis store и его обязательные
-background runtimes относятся к следующему этапу.
+Завершение consumer loop или HTTP server завершает общий runtime. Состояние
+каналов и Presence при этом пока собирается с process-local `MemoryChannelStore`
+и `InProcessChannelCommitDelivery`; Redis store и его обязательные background
+runtimes относятся к следующему этапу.
 
 ### Политика потока и потребителей JetStream
 
@@ -329,7 +348,7 @@ JetStream
        типизированный обработчик
              │
              ▼
-       локальный ChannelHub
+       локальный ChannelRouter
              │
              ▼
        очереди WebSocket этого узла
@@ -364,7 +383,9 @@ JetStream
 - обработчики должны быть идемпотентными;
 - каждый узел дедуплицирует пару `(node_id, event_id)`; глобальный ключ только по `event_id` ошибочно оставит событие одному узлу;
 - при необходимости `event_id` передаётся клиенту для клиентской дедупликации;
-- события присутствия используют `connection_id` и монотонно возрастающий номер ревизии (`revision`).
+- события присутствия несут `event_id` committed перехода и per-channel
+  `presence_revision`/`occupancy_version`; событие с revision не выше уже
+  применённой — stale no-op.
 
 Доставка ровно один раз (`exactly-once`) между JetStream, памятью процесса и очередью WebSocket без дополнительной транзакционной системы не гарантируется.
 
@@ -372,12 +393,12 @@ JetStream
 
 Нельзя атомарно объединить отметку дедупликации в Redis и запись в локальные очереди WebSocket. Поэтому даже с Redis сохраняется семантика доставки как минимум один раз, а клиентская дедупликация остаётся последним уровнем защиты от повторного отображения сообщения.
 
-Глобальный порядок событий от разных источников не гарантируется. Там, где порядок влияет на состояние, обработчик использует собственный ключ упорядочивания и номер ревизии, например `(connection_id, revision)` для присутствия.
+Глобальный порядок событий от разных источников не гарантируется. Там, где порядок влияет на состояние, обработчик использует собственный ключ упорядочивания и номер ревизии, например `presence_revision` канала для присутствия.
 
 ### Присутствие в кластере
 
 Сейчас Presence process-local, поэтому multi-node snapshot неполон. Целевая
-модель оставляет `ChannelHub` локальным, делает Redis authoritative для
+модель оставляет `ChannelRouter` локальным, делает Redis authoritative для
 attachments, members и Occupancy и атомарно пишет каждую revision в durable
 outbox. JetStream выполняет at-least-once fan-out уже committed change, а
 leases и fenced reaper удаляют state упавшего поколения ноды.
@@ -394,8 +415,8 @@ leases и fenced reaper удаляют state упавшего поколения
 | Механизм публикации событий | `LocalEventPublisher` | `JetStreamEventPublisher` |
 | Межузловой транспорт | Нет | NATS JetStream |
 | Путь исходного узла | Прямая локальная обработка | Только через собственного потребителя NATS |
-| `ChannelHub` | Локальный | Локальный на каждом узле |
-| Состояние присутствия | В памяти | Сейчас локальное; целевое — Redis |
+| `ChannelRouter` | Локальный | Локальный на каждом узле |
+| Состояние каналов и присутствия | `MemoryChannelStore` | Сейчас `MemoryChannelStore`; целевое — `RedisChannelStore` |
 | Снимок состояния присутствия | Текущий узел | Сейчас текущий узел; целевой — все узлы |
 | Очистка после отказа узла | Состояние исчезает с процессом | Целевые lease, generation и fenced reaper |
 | Дедупликация потребителя | Не требуется | Обязательна |
@@ -471,7 +492,7 @@ HTTP-рассылка не может синхронно возвращать г
 }
 ```
 
-Количество, которое возвращает локальный `ChannelHub`, означает только число кадров, принятых локальными исходящими очередями. Это не сквозное подтверждение доставки.
+Количество, которое возвращает локальный `ChannelRouter`, означает только число кадров, принятых локальными исходящими очередями. Это не сквозное подтверждение доставки.
 
 Сетевое имя события исправлено на `realtime.websocket_disconnected`.
 `WebsocketDisconnected` остаётся `LocalOnly`; целевой локальный cleanup создаёт
@@ -484,7 +505,7 @@ HTTP-рассылка не может синхронно возвращать г
 Пример ниже показывает реализацию `EventPublisher` для событий класса `AllNodes`. `LocalOnly` всегда направляется в локальный `EventDispatcher`, а `WorkQueue` при необходимости получает отдельную тему NATS и общую группу потребителей.
 
 ```rust
-let realtime = Arc::new(Realtime::from_config(realtime_config));
+let realtime = Arc::new(Realtime::from_config(realtime_config, node_instance));
 let mut dispatcher = EventDispatcher::new();
 
 register_handlers(&mut dispatcher, realtime.clone())?;

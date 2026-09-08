@@ -3,8 +3,9 @@ use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, Prot
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 
-/// One sender per active WebSocket connection. ChannelHub stores it so broadcasts
-/// can enqueue ProtocolMessage values without owning the WebSocket itself.
+/// One sender per active WebSocket connection. `ChannelRouter` stores it so
+/// broadcasts can enqueue `ProtocolMessage` values without owning the WebSocket
+/// itself.
 pub type ConnectionSender = OutboundSender;
 
 #[derive(Default)]
