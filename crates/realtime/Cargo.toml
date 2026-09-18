@@ -18,6 +18,7 @@ tokio = { version = "1.52.3", features = ["sync", "rt", "macros", "time"] }
 futures-util = "0.3"
 validator = { version = "0.20", features = ["derive"] }
 bitflags = "2"
+redis-lease = { path = "../redis-lease" }
 redis-client = { path = "../redis-client" }
 getrandom = "0.3"
 base64 = "0.22"

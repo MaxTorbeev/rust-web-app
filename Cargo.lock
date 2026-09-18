@@ -1632,6 +1632,7 @@ dependencies = [
  "pretty_assertions",
  "proptest",
  "redis-client",
+ "redis-lease",
  "rstest",
  "rstest_reuse",
  "serde",

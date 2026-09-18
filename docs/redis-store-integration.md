@@ -1,6 +1,6 @@
 # Подзадача: реализовать и интегрировать RedisChannelStore
 
-Статус: запланировано.
+Статус: в работе; этап 1 выполнен, runtime остаётся на memory store.
 
 Родительский дизайн: [Кластерный Presence и Ably-compatible Occupancy](presence-occupancy.md).
 
@@ -15,9 +15,10 @@
 runtime допустимо только после готовности доставки, lifecycle-задач и проверки
 сбоев на двух нодах.
 
-## Исходное состояние
+## Текущее состояние
 
-- `crates/realtime/src/channel/store/redis.rs` — пустой модуль.
+- `crates/realtime/src/channel/store/redis/` содержит структуру адаптера,
+  построитель `RedisKeys` и его тесты. Store и Lua transitions ещё не реализованы.
 - Есть контракты `AttachmentStore`, `PresenceStore` и `OccupancyShardStore`.
 - `MemoryChannelStore` реализует attachments и Presence; есть общий набор
   store contract-тестов.
@@ -48,6 +49,10 @@ runtime допустимо только после готовности дост
 ## План работ
 
 ### 1. Схема ключей и структура адаптера
+
+Выполнено. Схема, типы данных, сроки хранения и правила миграции описаны в
+[Redis Presence: схема ключей v1](redis-store-schema.md). Код:
+`crates/realtime/src/channel/store/redis/keys.rs`.
 
 Преобразовать `channel/store/redis.rs` в модуль `channel/store/redis/`.
 Выделить реализацию store, построение ключей, протокол данных и Lua-скрипты.
@@ -191,8 +196,8 @@ lease expiry, reaper cleanup, snapshot/delta race и resync.
 - Live two-node failure-сценарии пройдены; команды и результаты проверки
   сохранены перед включением режима.
 
-## Первый шаг
+## Следующий шаг
 
-Начать со схемы Redis-ключей и `channel/store/redis/keys.rs`. Следом согласовать
-node lease + generation deadline, затем реализовать первый
-`attach_and_snapshot` с fencing и outbox в одном transition.
+Реализовать node lease + generation deadline на определённой схеме ключей.
+Затем реализовать первый `attach_and_snapshot` с fencing и outbox в одном
+transition.

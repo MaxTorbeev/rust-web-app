@@ -515,11 +515,13 @@ idempotent cleanup.
 Кандидат события, которое не создано (`Unchanged`, rejected outcome, replay),
 никуда не записывается и конфликтов не создаёт.
 
-Запись `PresenceMutationOutcome` хранится до authoritative disconnect
-connection-а. Пока connection жив, TTL ledger продлевается вместе с lease
-экземпляра ноды и не может истечь. Disconnect и reaper помечают ledger закрытым, но удаляют его
-только после safety TTL, не меньшего максимального поддерживаемого окна
-retry/resume. Иначе поздний повтор того же `msgSerial` создаст новую revision.
+Запись `PresenceMutationOutcome` хранится в ограниченном окне ledger до
+authoritative disconnect connection-а. В Redis v1 открытый ledger не имеет
+TTL: node renewal не должен обходить все connection keys, а dedup не может
+истечь до authoritative cleanup. Соединение учитывается в generation index.
+Disconnect и reaper помечают ledger закрытым, но удаляют его только после
+safety TTL, не меньшего максимального поддерживаемого окна retry/resume.
+Иначе поздний повтор того же `msgSerial` создаст новую revision.
 
 Закрытый ledger доступен только для чтения. Повтор известного `msgSerial`
 возвращает прежний outcome и прежний `event_id`; неизвестный `msgSerial`
@@ -560,6 +562,10 @@ storage-level ошибки. Ожидаемый protocol rejection не маск�
 error и возвращается через `PresenceMutationOutcome::Rejected`.
 
 ## Redis authoritative model
+
+Конкретные ключи, Redis types и правила жизненного цикла v1 определены в
+[схеме RedisStore](redis-store-schema.md). Построитель `RedisKeys` реализован;
+transitions и runtime-интеграция пока отсутствуют.
 
 Namespace:
 
