@@ -10,10 +10,10 @@ use std::time::Duration;
 use redis_client::{RedisClient, RedisConfig, ScriptValue};
 use tokio::time::sleep;
 
-use crate::protocol::fence_key;
+use crate::protocol::{decode_acquire, fence_key, owner_value};
 use crate::{
-  AcquireOutcome, Fence, LUA_HOLDS_LEASE, LeaseKey, LeaseOwner, LeaseToken, RedisLease,
-  RedisLeaseError, ReleaseOutcome, RenewOutcome, lease_value,
+  AcquireOutcome, Fence, LUA_ACQUIRE_LEASE, LUA_HOLDS_LEASE, LUA_RENEW_LEASE, LeaseKey, LeaseOwner,
+  LeaseToken, RedisLease, RedisLeaseError, ReleaseOutcome, RenewOutcome, lease_value,
 };
 
 const TTL: Duration = Duration::from_secs(30);
@@ -158,6 +158,50 @@ fn owner(name: &str) -> LeaseOwner {
 /// Token, которого Redis не выдавал: чужой владелец или чужой fence.
 fn forged(key: &LeaseKey, owner: &LeaseOwner, fence: u64) -> LeaseToken {
   LeaseToken::new(key.clone(), owner.clone(), Fence::new(fence))
+}
+
+#[ignore = "requires a live Redis (REDIS_LEASE_TEST_PORT)"]
+#[tokio::test]
+async fn acquire_and_renew_fragments_compose_inside_a_foreign_script() {
+  let fx = Fixture::connect("composed_acquire_renew").await;
+  let key = fx.key("lease");
+  let owner = owner("node-a");
+  let fence_key = fence_key(&key);
+  let owner_value = owner_value(&owner);
+  let ttl_ms = TTL.as_millis().to_string();
+  let script = format!(
+    "{LUA_ACQUIRE_LEASE}\n{LUA_RENEW_LEASE}\n\
+     local acquired = acquire_lease(KEYS[1], KEYS[2], ARGV[1], ARGV[2])\n\
+     if acquired[1] ~= 1 then return acquired end\n\
+     local token_value = redis.call('GET', KEYS[1])\n\
+     local renewed = renew_lease(KEYS[1], token_value, ARGV[2])\n\
+     return {{acquired, renewed}}"
+  );
+
+  let reply = fx
+    .redis
+    .invoke_script(
+      &script,
+      &[key.as_str().as_bytes(), fence_key.as_bytes()],
+      &[owner_value.as_bytes(), ttl_ms.as_bytes()],
+    )
+    .await
+    .unwrap();
+
+  let ScriptValue::Array(values) = reply else {
+    panic!("unexpected composed reply: {reply:?}");
+  };
+  let [acquired, ScriptValue::Integer(1)] = values.as_slice() else {
+    panic!("both functions must return to the calling script: {values:?}");
+  };
+  let AcquireOutcome::Acquired { token } = decode_acquire(acquired.clone(), &key, &owner).unwrap()
+  else {
+    panic!("the composed script must acquire the lease");
+  };
+
+  assert_eq!(fx.stored(&key).await, Some(lease_value(&token)));
+  assert_eq!(fx.holds_lease(&key, &lease_value(&token)).await, 1);
+  fx.cleanup(&key).await;
 }
 
 #[ignore = "requires a live Redis (REDIS_LEASE_TEST_PORT)"]
@@ -374,6 +418,87 @@ async fn fence_survives_release_and_keeps_growing() {
     );
     previous = next;
   }
+
+  fx.cleanup(&key).await;
+}
+
+#[ignore = "requires a live Redis (REDIS_LEASE_TEST_PORT)"]
+#[tokio::test]
+async fn large_fences_remain_exact_across_acquire_retry_and_new_period() {
+  let fx = Fixture::connect("large_fences").await;
+  let owner = owner("node-a");
+
+  for expected in [(1_u64 << 53) - 1, 1 << 53, (1 << 53) + 1, (1 << 53) + 2] {
+    let key = fx.key(&expected.to_string());
+    let counter = LeaseKey::new(fence_key(&key)).unwrap();
+    fx.store_raw(&counter, &(expected - 1).to_string(), None)
+      .await;
+
+    let token = fx.acquire(&key, &owner, TTL).await;
+    assert_eq!(token.fence().get(), expected);
+    assert_eq!(fx.stored(&counter).await, Some(expected.to_string()));
+    assert_eq!(fx.stored(&key).await, Some(lease_value(&token)));
+    assert_eq!(fx.acquire(&key, &owner, TTL).await, token);
+    assert_eq!(
+      fx.lease.renew(&token, TTL).await.unwrap(),
+      RenewOutcome::Renewed
+    );
+    assert_eq!(fx.holds_lease(&key, &lease_value(&token)).await, 1);
+    assert_eq!(
+      fx.lease.release(&token).await.unwrap(),
+      ReleaseOutcome::Released
+    );
+
+    let next = fx.acquire(&key, &owner, TTL).await;
+    assert_eq!(next.fence().get(), expected + 1);
+    assert_eq!(
+      fx.lease.renew(&token, TTL).await.unwrap(),
+      RenewOutcome::Lost
+    );
+    assert_eq!(
+      fx.lease.release(&token).await.unwrap(),
+      ReleaseOutcome::Lost
+    );
+    assert_eq!(fx.holds_lease(&key, &lease_value(&token)).await, 0);
+    assert_eq!(fx.holds_lease(&key, &lease_value(&next)).await, 1);
+    assert_eq!(fx.stored(&key).await, Some(lease_value(&next)));
+
+    fx.cleanup(&key).await;
+  }
+}
+
+#[ignore = "requires a live Redis (REDIS_LEASE_TEST_PORT)"]
+#[tokio::test]
+async fn maximum_fence_can_be_renewed_but_overflow_cannot_create_a_lease() {
+  let fx = Fixture::connect("maximum_fence").await;
+  let key = fx.key("lease");
+  let counter = LeaseKey::new(fence_key(&key)).unwrap();
+  let owner = owner("node-a");
+  fx.store_raw(&counter, &(i64::MAX - 1).to_string(), None)
+    .await;
+
+  let token = fx.acquire(&key, &owner, TTL).await;
+  assert_eq!(token.fence().get(), i64::MAX as u64);
+  assert_eq!(fx.stored(&key).await, Some(lease_value(&token)));
+  assert_eq!(fx.acquire(&key, &owner, TTL).await, token);
+  assert_eq!(
+    fx.lease.renew(&token, TTL).await.unwrap(),
+    RenewOutcome::Renewed
+  );
+  assert_eq!(fx.holds_lease(&key, &lease_value(&token)).await, 1);
+  assert_eq!(
+    fx.lease.release(&token).await.unwrap(),
+    ReleaseOutcome::Released
+  );
+
+  let result = fx.lease.acquire(&key, &owner, TTL).await;
+  assert!(
+    matches!(result, Err(RedisLeaseError::Redis(_))),
+    "{result:?}"
+  );
+  assert_eq!(fx.stored(&key).await, None);
+  assert_eq!(fx.stored(&counter).await, Some(i64::MAX.to_string()));
+  assert_eq!(fx.holds_lease(&key, &lease_value(&token)).await, 0);
 
   fx.cleanup(&key).await;
 }

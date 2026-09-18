@@ -8,13 +8,4 @@
 -- периоду (в том числе новому периоду того же владельца). Чужой lease никогда
 -- не продлевается и не перезаписывается.
 
-local key = KEYS[1]
-local token_value = ARGV[1]
-local ttl_ms = ARGV[2]
-
-if redis.call("GET", key) ~= token_value then
-  return 0
-end
-
-redis.call("PEXPIRE", key, ttl_ms)
-return 1
+return renew_lease(KEYS[1], ARGV[1], ARGV[2])

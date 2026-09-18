@@ -65,7 +65,8 @@ pub(crate) fn redis_ttl_milliseconds(ttl: Duration) -> Result<i64, RedisLeaseErr
 }
 
 /// Ответ `acquire.lua`: `{1, fence}` — lease у вызывающего, `{2, remaining_ms}`
-/// — у другого владельца.
+/// — у другого владельца. Fence передаётся точной десятичной строкой
+/// в диапазоне `1..=i64::MAX`, который поддерживает Redis INCR.
 ///
 /// Token собирается здесь из ключа и владельца запроса и fence из ответа: в
 /// Redis лежит то же самое в виде `lease:<owner>:<fence>`.
@@ -84,11 +85,16 @@ pub(crate) fn decode_acquire(
   };
 
   match values.as_slice() {
-    [ScriptValue::Integer(1), ScriptValue::Integer(fence)] => {
-      let fence = u64::try_from(*fence).map_err(|_| unexpected(value.clone()))?;
+    [ScriptValue::Integer(1), ScriptValue::Bytes(bytes)] => {
+      let text = std::str::from_utf8(bytes).map_err(|_| unexpected(value.clone()))?;
+      let fence = text.parse::<i64>().map_err(|_| unexpected(value.clone()))?;
+
+      if fence <= 0 || fence.to_string() != text {
+        return Err(unexpected(value.clone()));
+      }
 
       Ok(AcquireOutcome::Acquired {
-        token: LeaseToken::new(key.clone(), owner.clone(), Fence::new(fence)),
+        token: LeaseToken::new(key.clone(), owner.clone(), Fence::new(fence as u64)),
       })
     }
     [ScriptValue::Integer(2), ScriptValue::Integer(remaining_ms)] => {

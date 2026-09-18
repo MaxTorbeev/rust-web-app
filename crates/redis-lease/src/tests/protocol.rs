@@ -88,17 +88,29 @@ fn ttl_is_rounded_up_to_whole_milliseconds_and_never_zero() {
 #[test]
 fn acquire_reply_is_decoded() {
   // Token собирается из ключа и владельца запроса и fence из ответа.
-  assert_eq!(
-    decode_acquire(
-      ScriptValue::Array(vec![ScriptValue::Integer(1), ScriptValue::Integer(7)]),
-      &key(),
-      &owner(),
-    )
-    .unwrap(),
-    AcquireOutcome::Acquired {
-      token: LeaseToken::new(key(), owner(), Fence::new(7)),
-    },
-  );
+  for fence in [
+    1_u64,
+    7,
+    (1 << 53) - 1,
+    1 << 53,
+    (1 << 53) + 1,
+    i64::MAX as u64,
+  ] {
+    assert_eq!(
+      decode_acquire(
+        ScriptValue::Array(vec![
+          ScriptValue::Integer(1),
+          ScriptValue::Bytes(fence.to_string().into_bytes()),
+        ]),
+        &key(),
+        &owner(),
+      )
+      .unwrap(),
+      AcquireOutcome::Acquired {
+        token: LeaseToken::new(key(), owner(), Fence::new(fence)),
+      },
+    );
+  }
   assert_eq!(
     decode_acquire(
       ScriptValue::Array(vec![ScriptValue::Integer(2), ScriptValue::Integer(1_500)]),
@@ -115,10 +127,41 @@ fn acquire_reply_is_decoded() {
     ScriptValue::Integer(1),
     ScriptValue::Array(vec![ScriptValue::Integer(3), ScriptValue::Integer(1)]),
     ScriptValue::Array(vec![ScriptValue::Integer(1), ScriptValue::Integer(-1)]),
+    ScriptValue::Array(vec![ScriptValue::Integer(1), ScriptValue::Integer(7)]),
     ScriptValue::Null,
   ] {
     assert!(matches!(
       decode_acquire(bad, &key(), &owner()),
+      Err(RedisLeaseError::UnexpectedScriptValue {
+        operation: "acquire",
+        ..
+      })
+    ));
+  }
+}
+
+#[test]
+fn acquire_rejects_invalid_fence_strings() {
+  for bytes in [
+    b"".as_slice(),
+    b"0",
+    b"-1",
+    b"+7",
+    b"007",
+    b" 7",
+    b"7 ",
+    b"7.0",
+    b"7e0",
+    b"9223372036854775808",
+    b"18446744073709551615",
+    b"\xff",
+  ] {
+    let reply = ScriptValue::Array(vec![
+      ScriptValue::Integer(1),
+      ScriptValue::Bytes(bytes.to_vec()),
+    ]);
+    assert!(matches!(
+      decode_acquire(reply, &key(), &owner()),
       Err(RedisLeaseError::UnexpectedScriptValue {
         operation: "acquire",
         ..
