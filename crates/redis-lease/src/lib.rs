@@ -30,7 +30,7 @@ mod lease;
 mod outcome;
 
 // Раскладка lease и Lua-скрипты. Для составных скриптов экспортируются
-// формат значения token и определения функций захвата, продления и проверки.
+// подготовка аргументов, разбор ответов и определения Lua-функций.
 mod protocol;
 mod scripts;
 
@@ -38,7 +38,14 @@ pub use error::RedisLeaseError;
 pub use identity::{LeaseKey, LeaseOwner, LeaseToken};
 pub use lease::RedisLease;
 pub use outcome::{AcquireOutcome, Fence, ReleaseOutcome, RenewOutcome};
-pub use protocol::lease_value;
+pub use protocol::{
+  decode_acquire,
+  decode_renew,
+  fence_key,
+  lease_value,
+  owner_value,
+  redis_ttl_milliseconds,
+};
 pub use scripts::{
   ACQUIRE_LEASE as LUA_ACQUIRE_LEASE, HOLDS_LEASE as LUA_HOLDS_LEASE,
   RENEW_LEASE as LUA_RENEW_LEASE,

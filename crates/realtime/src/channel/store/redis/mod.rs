@@ -5,7 +5,7 @@
 //! Схема и жизненный цикл данных описаны в `docs/redis-store-schema.md`.
 
 mod keys;
-mod node_lease;
+mod node;
 mod protocol;
 mod scripts;
 mod store;

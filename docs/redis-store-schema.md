@@ -6,6 +6,8 @@
 Связанные документы: [подзадача интеграции](redis-store-integration.md),
 [доменный дизайн](presence-occupancy.md).
 
+Контракты transitions: [attach_and_snapshot](redis-attach-and-snapshot.md).
+
 ## Структура адаптера
 
 `crates/realtime/src/channel/store/redis/`:

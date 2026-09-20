@@ -90,8 +90,9 @@ impl LeaseOwner {
 /// пока lease не истёк и не освобождён, возвращает тот же fence. Потерянный
 /// ответ Redis не превращает retry в новый период.
 ///
-/// Token выдаёт только [`crate::RedisLease::acquire`]: собрать его из ключа,
-/// владельца и числа снаружи нельзя, как и [`Fence`].
+/// Token создаётся при разборе успешного ответа захвата lease
+/// через [`crate::decode_acquire`]. Сам по себе token не гарантирует,
+/// что lease ещё действует: это проверяется в Redis при выполнении операции.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct LeaseToken {
   key: LeaseKey,

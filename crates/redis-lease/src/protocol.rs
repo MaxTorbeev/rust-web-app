@@ -1,10 +1,8 @@
 //! Раскладка lease в Redis: форма значения, ключ fence, единицы TTL и ответы
 //! скриптов.
 //!
-//! Публична только форма значения ([`lease_value`]): её воспроизводят чужие
-//! скрипты, передавая token в `holds_lease`. Остальное — договорённость между
-//! Lua-скриптами крейта и [`crate::RedisLease`]; снаружи она не видна и может
-//! меняться, не меняя протокола.
+//! Функции подготовки аргументов и разбора ответов используются также
+//! адаптерами, которые встраивают операции lease в составные Lua-скрипты.
 
 use std::time::Duration;
 
@@ -37,12 +35,11 @@ pub fn lease_value(token: &LeaseToken) -> String {
   )
 }
 
-/// Значение владельца без fence — `lease:<owner>`.
+/// Значение владельца без fence: `lease:<owner>`.
 ///
-/// Его получает `acquire.lua`: по нему скрипт узнаёт непрерывный период того же
-/// владельца при любом fence и дописывает fence нового периода. Наружу не
-/// отдаётся: для `renew`, `release` и `holds_lease` нужен полный token.
-pub(crate) fn owner_value(owner: &LeaseOwner) -> String {
+/// Используется при захвате lease. Для продления, освобождения
+/// и проверки владения нужен полный token.
+pub fn owner_value(owner: &LeaseOwner) -> String {
   format!("{LEASE_VALUE_PREFIX}{}", owner.as_str())
 }
 
@@ -50,11 +47,13 @@ pub(crate) fn owner_value(owner: &LeaseOwner) -> String {
 ///
 /// Хранится отдельно и без TTL: fence должен переживать release и истечение
 /// lease, иначе новый владелец мог бы получить fence не больше прежнего.
-pub(crate) fn fence_key(key: &LeaseKey) -> String {
+pub fn fence_key(key: &LeaseKey) -> String {
   format!("{}{FENCE_KEY_SUFFIX}", key.as_str())
 }
 
-pub(crate) fn redis_ttl_milliseconds(ttl: Duration) -> Result<i64, RedisLeaseError> {
+/// Переводит положительный TTL в миллисекунды с округлением вверх.
+/// Возвращает ошибку для нулевого TTL или значения за пределами `i64`.
+pub fn redis_ttl_milliseconds(ttl: Duration) -> Result<i64, RedisLeaseError> {
   if ttl.is_zero() {
     return Err(RedisLeaseError::ZeroTtl);
   }
@@ -70,7 +69,7 @@ pub(crate) fn redis_ttl_milliseconds(ttl: Duration) -> Result<i64, RedisLeaseErr
 ///
 /// Token собирается здесь из ключа и владельца запроса и fence из ответа: в
 /// Redis лежит то же самое в виде `lease:<owner>:<fence>`.
-pub(crate) fn decode_acquire(
+pub fn decode_acquire(
   value: ScriptValue,
   key: &LeaseKey,
   owner: &LeaseOwner,
@@ -108,7 +107,8 @@ pub(crate) fn decode_acquire(
   }
 }
 
-pub(crate) fn decode_renew(value: ScriptValue) -> Result<RenewOutcome, RedisLeaseError> {
+/// Разбирает ответ продления lease: `1` — продлён, `0` — владение потеряно.
+pub fn decode_renew(value: ScriptValue) -> Result<RenewOutcome, RedisLeaseError> {
   match value {
     ScriptValue::Integer(1) => Ok(RenewOutcome::Renewed),
     ScriptValue::Integer(0) => Ok(RenewOutcome::Lost),
