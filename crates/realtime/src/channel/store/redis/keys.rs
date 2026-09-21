@@ -3,7 +3,7 @@ use support::{NodeId, NodeInstance};
 
 use crate::{ApplicationId, ChannelKey, ConnectionId};
 
-use super::protocol::{SCHEMA_VERSION, SUBSYSTEM, generation, segment};
+use super::protocol::{SCHEMA_VERSION, SUBSYSTEM, generation, operation_serial, segment};
 
 /// Ключи Redis Presence v1 в namespace одного APP/APP_ENV.
 ///
@@ -37,7 +37,7 @@ impl RedisKeys {
     self.channel_key(channel, "attachments")
   }
 
-  /// HASH: (connection, client) → Presence member.
+  /// HASH: K.U → payload участника; K.U:revision и K.U:updated_at → метаданные.
   pub fn channel_members(&self, channel: &ChannelKey) -> String {
     self.channel_key(channel, "members")
   }
@@ -62,9 +62,23 @@ impl RedisKeys {
     self.connection_key(app, connection, "members")
   }
 
-  /// HASH: msg_serial → fingerprint и сохранённый outcome.
+  /// Префикс ключей HASH операций; сам ключ не хранит данные.
   pub fn connection_operations(&self, app: &ApplicationId, connection: &ConnectionId) -> String {
     self.connection_key(app, connection, "operations")
+  }
+
+  /// HASH одной операции: fingerprint и полные поля сохранённого результата.
+  pub fn connection_operation(
+    &self,
+    app: &ApplicationId,
+    connection: &ConnectionId,
+    serial: u64,
+  ) -> String {
+    format!(
+      "{}.{}",
+      self.connection_operations(app, connection),
+      operation_serial(serial)
+    )
   }
 
   /// ZSET: порядок msg_serial для ограниченного окна ledger; score всегда 0.
@@ -86,7 +100,7 @@ impl RedisKeys {
     self.key(&["generation-deadlines"])
   }
 
-  /// SET: (application, connection) для cleanup точного состояния и ledger.
+  /// SET: открытые (application, connection) для cleanup; закрытые записи очищаются TTL.
   pub fn generation_connections(&self, instance: &NodeInstance) -> String {
     self.key(&["generation", &generation(instance), "connections"])
   }

@@ -17,6 +17,8 @@ use super::{NodeClaimOutcome, NodeLease, NodeLeaseError};
 
 const TTL: Duration = Duration::from_secs(30);
 
+mod attach;
+
 struct Fixture {
   redis: RedisClient,
   keys: RedisKeys,
@@ -95,6 +97,37 @@ impl Fixture {
     assert_eq!(state[3], ScriptValue::Integer(deadline));
   }
 
+  async fn check_ownership(&self, lease: &NodeLease, token: &str, generation: &str) -> ScriptValue {
+    self
+      .try_check_ownership(lease, token, generation)
+      .await
+      .unwrap()
+  }
+
+  async fn try_check_ownership(
+    &self,
+    lease: &NodeLease,
+    token: &str,
+    generation: &str,
+  ) -> redis_client::RedisClientResult<ScriptValue> {
+    const SCRIPT: &str = const_format::concatcp!(
+      scripts::LUA_CHECK_NODE_LEASE,
+      "\nlocal now_ms, rejection = check_node_lease(KEYS[1], KEYS[2], ARGV[1], ARGV[2])\n",
+      "if rejection then return rejection end\nreturn {1, now_ms}",
+    );
+    self
+      .redis
+      .invoke_script(
+        SCRIPT,
+        &[
+          lease.token().key().as_str().as_bytes(),
+          self.keys.generation_deadlines().as_bytes(),
+        ],
+        &[token.as_bytes(), generation.as_bytes()],
+      )
+      .await
+  }
+
   async fn cleanup(&self, instance: &NodeInstance) {
     let lease_key = LeaseKey::new(self.keys.node_lease(&instance.node_id)).unwrap();
     let counter_key = fence_key(&lease_key);
@@ -123,6 +156,219 @@ fn instance() -> NodeInstance {
     BootGeneration::generate(),
     Timestamp::from_millis(1000),
   )
+}
+
+fn assert_ownership_rejection(reply: ScriptValue, code: &str) {
+  let ScriptValue::Array(values) = reply else {
+    panic!("unexpected ownership response: {reply:?}");
+  };
+  assert_eq!(values.len(), 3);
+  assert_eq!(values[0], ScriptValue::Integer(0));
+  assert_eq!(values[1], ScriptValue::Bytes(code.as_bytes().to_vec()));
+  assert!(matches!(&values[2], ScriptValue::Bytes(message) if !message.is_empty()));
+}
+
+#[ignore = "requires a live Redis (REALTIME_REDIS_TEST_PORT)"]
+#[tokio::test]
+async fn ownership_check_accepts_live_lease_and_rejects_mismatched_generation() {
+  let fx = Fixture::connect().await;
+  let node = instance();
+  // Fence выше границы точности Lua number должен сравниваться без округления.
+  let key = LeaseKey::new(fx.keys.node_lease(&node.node_id)).unwrap();
+  fx.redis
+    .invoke_script(
+      "return redis.call('SET', KEYS[1], '9007199254740992')",
+      &[fence_key(&key).as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  let lease = fx.claim(&node, TTL).await;
+  let token = lease_value(lease.token());
+  let generation_id = generation(&node);
+  let before = fx.state(&node).await;
+
+  let reply = fx.check_ownership(&lease, &token, &generation_id).await;
+  let ScriptValue::Array(values) = reply else {
+    panic!("unexpected ownership response: {reply:?}");
+  };
+  assert_eq!(values.len(), 2);
+  assert_eq!(values[0], ScriptValue::Integer(1));
+  let ScriptValue::Integer(now_ms) = values[1] else {
+    panic!("expected Redis timestamp: {values:?}");
+  };
+  let ScriptValue::Integer(deadline_ms) = before[3] else {
+    panic!("expected lease expiry: {before:?}");
+  };
+  assert!(now_ms > 0 && now_ms < deadline_ms);
+
+  for (value, owner) in [
+    (token.clone(), generation(&instance())),
+    (token.clone(), String::new()),
+    (format!("lease:{generation_id}:0"), generation_id.clone()),
+    (format!("lease:{generation_id}:01"), generation_id.clone()),
+    (String::new(), generation_id.clone()),
+  ] {
+    assert_ownership_rejection(
+      fx.check_ownership(&lease, &value, &owner).await,
+      "invalid_request",
+    );
+  }
+  assert_ownership_rejection(
+    fx.check_ownership(
+      &lease,
+      &format!("lease:{generation_id}:9007199254740992"),
+      &generation_id,
+    )
+    .await,
+    "lease_lost",
+  );
+  assert_eq!(fx.state(&node).await, before);
+  fx.cleanup(&node).await;
+}
+
+#[ignore = "requires a live Redis (REALTIME_REDIS_TEST_PORT)"]
+#[tokio::test]
+async fn ownership_check_rejects_expired_lease_old_token_and_new_boot() {
+  let fx = Fixture::connect().await;
+  let node = instance();
+  let lease = fx.claim(&node, TTL).await;
+  let token = lease_value(lease.token());
+  let generation_id = generation(&node);
+
+  // Истекает только lease; deadline ещё в будущем, но не заменяет lease.
+  fx.redis
+    .invoke_script(
+      "return redis.call('PEXPIREAT', KEYS[1], 1)",
+      &[lease.token().key().as_str().as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  let expired = fx.state(&node).await;
+  assert_ownership_rejection(
+    fx.check_ownership(&lease, &token, &generation_id).await,
+    "lease_lost",
+  );
+  assert_eq!(fx.state(&node).await, expired);
+
+  let next = fx.claim(&node, TTL).await;
+  let before = fx.state(&node).await;
+  assert_ownership_rejection(
+    fx.check_ownership(&lease, &token, &generation_id).await,
+    "lease_lost",
+  );
+  assert_eq!(fx.state(&node).await, before);
+
+  fx.redis
+    .invoke_script(
+      "return redis.call('PEXPIREAT', KEYS[1], 1)",
+      &[next.token().key().as_str().as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  let new_node = instance();
+  let new_lease = fx.claim(&new_node, TTL).await;
+  let before = fx.state(&new_node).await;
+  assert_ownership_rejection(
+    fx.check_ownership(&next, &lease_value(next.token()), &generation_id)
+      .await,
+    "lease_lost",
+  );
+  assert_eq!(fx.state(&new_node).await, before);
+  assert!(matches!(
+    fx.check_ownership(&new_lease, &lease_value(new_lease.token()), &generation(&new_node)).await,
+    ScriptValue::Array(values) if values[0] == ScriptValue::Integer(1)
+  ));
+  fx.cleanup(&node).await;
+}
+
+#[ignore = "requires a live Redis (REALTIME_REDIS_TEST_PORT)"]
+#[tokio::test]
+async fn ownership_check_requires_valid_live_generation_deadline() {
+  let fx = Fixture::connect().await;
+  let node = instance();
+  let lease = fx.claim(&node, TTL).await;
+  let token = lease_value(lease.token());
+  let generation_id = generation(&node);
+  let deadline_key = fx.keys.generation_deadlines();
+
+  for (score, code) in [
+    ("0", "lease_lost"),
+    ("-1", "corrupt_state"),
+    ("1.5", "corrupt_state"),
+    ("+inf", "corrupt_state"),
+    ("9007199254740992", "corrupt_state"),
+  ] {
+    fx.redis
+      .invoke_script(
+        "return redis.call('ZADD', KEYS[1], ARGV[1], ARGV[2])",
+        &[deadline_key.as_bytes()],
+        &[score.as_bytes(), generation_id.as_bytes()],
+      )
+      .await
+      .unwrap();
+    let before = fx.state(&node).await;
+    assert_ownership_rejection(
+      fx.check_ownership(&lease, &token, &generation_id).await,
+      code,
+    );
+    assert_eq!(fx.state(&node).await, before);
+  }
+
+  // Отсутствующее поколение отклоняется даже при наличии чужого deadline.
+  fx.redis.invoke_script(
+    "redis.call('ZREM', KEYS[1], ARGV[1]); return redis.call('ZADD', KEYS[1], 9007199254740991, 'other')",
+    &[deadline_key.as_bytes()], &[generation_id.as_bytes()],
+  ).await.unwrap();
+  assert_ownership_rejection(
+    fx.check_ownership(&lease, &token, &generation_id).await,
+    "lease_lost",
+  );
+  fx.redis
+    .invoke_script(
+      "return redis.call('DEL', KEYS[1])",
+      &[deadline_key.as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  assert_ownership_rejection(
+    fx.check_ownership(&lease, &token, &generation_id).await,
+    "lease_lost",
+  );
+
+  fx.redis
+    .invoke_script(
+      "return redis.call('SET', KEYS[1], 'wrong-type')",
+      &[deadline_key.as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  let error = fx
+    .try_check_ownership(&lease, &token, &generation_id)
+    .await
+    .unwrap_err();
+  assert_eq!(error.kind(), redis_client::RedisClientErrorKind::Command);
+  assert!(error.to_string().contains("WRONGTYPE"));
+
+  fx.redis
+    .invoke_script(
+      "redis.call('DEL', KEYS[1]); return redis.call('HSET', KEYS[1], 'field', 'value')",
+      &[lease.token().key().as_str().as_bytes()],
+      &[],
+    )
+    .await
+    .unwrap();
+  let error = fx
+    .try_check_ownership(&lease, &token, &generation_id)
+    .await
+    .unwrap_err();
+  assert_eq!(error.kind(), redis_client::RedisClientErrorKind::Command);
+  assert!(error.to_string().contains("WRONGTYPE"));
+  fx.cleanup(&node).await;
 }
 
 #[ignore = "requires a live Redis (REALTIME_REDIS_TEST_PORT)"]

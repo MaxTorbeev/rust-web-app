@@ -1,5 +1,8 @@
 use crate::channel::presence::command::PresenceBatchCommand;
-use crate::{ChannelCommitDelivery, ChannelKey, PresenceError, PresenceMutationOutcome, PresenceMutationReceipt, PresenceSnapshot, PresenceStore};
+use crate::{
+  ChannelCommitDelivery, ChannelKey, PresenceError, PresenceMutationOutcome,
+  PresenceMutationReceipt, PresenceSnapshot, PresenceStore,
+};
 use std::sync::Arc;
 
 pub struct PresenceService {
@@ -8,6 +11,13 @@ pub struct PresenceService {
 }
 
 impl PresenceService {
+  pub(crate) async fn project(
+    &self,
+    router: &crate::ChannelRouter,
+    change: &crate::PresenceChannelChanged,
+  ) -> Result<(), crate::ChannelCommitDeliveryError> {
+    router.project_presence(change, self.store.as_ref()).await
+  }
   pub fn new(store: Arc<dyn PresenceStore>, delivery: Arc<dyn ChannelCommitDelivery>) -> Self {
     Self { store, delivery }
   }
@@ -17,22 +27,10 @@ impl PresenceService {
   /// Возвращает receipt целиком: `replayed` говорит вызывающему, что клиент
   /// повторил уже обработанную команду и получил прежний результат.
   ///
-  /// Воспроизведённый результат не доставляется повторно. Replay означает, что
-  /// событие уже было зафиксировано и передано в delivery при первой обработке;
-  /// второй `after_commit` того же события дал бы подписчикам дубль deltas
-  /// (потерян `ACK` → клиент повторил `PRESENCE` → все получили Enter дважды).
-  /// Повторять доставку ради восстановления после сбоя первой попытки нет
-  /// смысла: в memory-режиме `broadcast` либо доходит до всех, либо падает на
-  /// сериализации кадра детерминированно — повтор даст ту же ошибку; в
-  /// Redis-режиме доставка идёт через outbox, и `after_commit` — no-op.
-  ///
-  /// Следствие: если первая доставка упала, клиент получил `NACK`, а операция
-  /// при этом уже зафиксирована и записана в журнал, повтор вернёт `ACK` без
-  /// новой попытки доставки. Это симптом бага сериализации, не штатный путь.
-  ///
-  /// Идемпотентность самого `ChannelCommitDelivery` по `event_id` остаётся его
-  /// контрактом (см. трейт) — этот метод на неё не полагается, но и не
-  /// подменяет.
+  /// Replay возвращает прежний receipt без повторного вызова delivery.
+  /// В Redis-режиме доставка независимо повторяется из durable outbox;
+  /// `after_commit` ничего не публикует. В memory-режиме ошибки первой
+  /// доставки не восстанавливаются повтором клиентской команды.
   pub async fn apply(
     &self,
     command: PresenceBatchCommand,

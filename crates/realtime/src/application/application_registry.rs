@@ -9,6 +9,15 @@ pub struct ApplicationRegistry {
 }
 
 impl ApplicationRegistry {
+  pub(crate) fn is_ready(&self) -> bool {
+    self.applications.values().all(|app| app.is_ready())
+  }
+
+  pub(crate) async fn shutdown(&self) {
+    for application in self.applications.values() {
+      application.router().shutdown().await;
+    }
+  }
   pub fn new() -> Self {
     Self {
       applications: HashMap::new(),

@@ -36,6 +36,28 @@ impl From<TokenIssueError> for RealtimeAuthError {
 }
 
 impl Realtime {
+  pub fn from_redis(config: RealtimeConfig, store: Arc<crate::redis::RedisChannelStore>) -> Self {
+    let issuer =
+      auth::TokenAccessIssuer::new(config.key_name.clone(), config.key_secret.as_bytes());
+    let verifier = TokenAccessVerifier::new(config.key_name, config.key_secret.as_bytes());
+    let mut applications = ApplicationRegistry::new();
+    applications.insert(RealtimeApplication::with_redis(
+      config.application_id,
+      issuer,
+      verifier,
+      store,
+    ));
+    Self { applications }
+  }
+
+  pub fn is_ready(&self) -> bool {
+    self.applications.is_ready()
+  }
+
+  pub async fn shutdown(&self) {
+    self.applications.shutdown().await;
+  }
+
   pub fn from_config(config: RealtimeConfig, node_instance: NodeInstance) -> Self {
     Self {
       applications: ApplicationRegistry::from_config(config, node_instance),

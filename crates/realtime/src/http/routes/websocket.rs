@@ -20,6 +20,10 @@ pub async fn websocket(
 
   let connection = application.create_connection(token);
 
+  if !application.is_ready() {
+    return Err(ApiError::unavailable("Realtime is not ready"));
+  }
+
   Ok(
     ws.on_upgrade(|socket| async move {
       handle_socket(socket, connection, application, event_bus).await

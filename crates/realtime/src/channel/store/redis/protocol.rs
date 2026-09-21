@@ -15,6 +15,11 @@ pub(super) fn segment(value: &str) -> String {
   URL_SAFE_NO_PAD.encode(value.as_bytes())
 }
 
+/// Ключ операции в HASH/ZSET: строки одинаковой длины сортируются как u64.
+pub(super) fn operation_serial(value: u64) -> String {
+  format!("{value:020}")
+}
+
 /// Формирует строковый идентификатор запуска ноды из node_id и boot_generation.
 /// Используется в ключах и индексах Redis, а также как владелец node lease.
 /// started_at не участвует: это метаданные запуска.

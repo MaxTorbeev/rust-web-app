@@ -5,8 +5,8 @@ use support::{NodeInstance, timestamp::Timestamp};
 
 /// Участник Presence: одно `client_id` одного соединения в одном канале.
 ///
-/// Сериализуемый формат — формат хранения участника в Redis; эталон
-/// зафиксирован snapshot-тестом.
+/// Публичный JSON-формат зафиксирован snapshot-тестом. Redis-адаптер
+/// хранит payload, revision и timestamp отдельно и собирает этот тип при чтении.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresenceMember {

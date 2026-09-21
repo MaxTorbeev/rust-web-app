@@ -1,10 +1,14 @@
-use crate::{ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection, ConnectionCleanupError, InProcessChannelCommitDelivery, MemoryChannelStore, PresenceLedgerPolicy, PresenceService};
-use support::fresh_uuid;
+use crate::connection::DisconnectConnectionCommand;
+use crate::{
+  ApplicationId, ApplicationSettings, AttachmentService, ChannelRouter, Connection,
+  ConnectionCleanupError, InProcessChannelCommitDelivery, MemoryChannelStore, PresenceLedgerPolicy,
+  PresenceService,
+};
 use auth::{TokenAccessIssuer, TokenAccessVerifier, VerifiedToken};
 use std::sync::Arc;
 use support::NodeInstance;
+use support::fresh_uuid;
 use support::timestamp::Timestamp;
-use crate::connection::DisconnectConnectionCommand;
 
 pub struct RealtimeApplication {
   pub id: ApplicationId,
@@ -15,6 +19,7 @@ pub struct RealtimeApplication {
   attachments: AttachmentService,
   router: Arc<ChannelRouter>,
   presence: PresenceService,
+  redis_store: Option<Arc<crate::redis::RedisChannelStore>>,
 }
 
 impl RealtimeApplication {
@@ -34,7 +39,10 @@ impl RealtimeApplication {
     let store = Arc::new(MemoryChannelStore::with_ledger_policy(
       PresenceLedgerPolicy::from_settings(&settings),
     ));
-    let delivery = Arc::new(InProcessChannelCommitDelivery::new(router.clone()));
+    let delivery = Arc::new(InProcessChannelCommitDelivery::new(
+      router.clone(),
+      store.clone(),
+    ));
 
     let attachments = AttachmentService::new(store.clone(), delivery.clone());
     let presence = PresenceService::new(store, delivery);
@@ -69,11 +77,46 @@ impl RealtimeApplication {
       router,
       presence,
       attachments,
+      redis_store: None,
     }
   }
 
   pub fn router(&self) -> &ChannelRouter {
     self.router.as_ref()
+  }
+
+  pub fn is_ready(&self) -> bool {
+    self
+      .redis_store
+      .as_ref()
+      .is_none_or(|store| store.is_ready())
+  }
+
+  pub(crate) fn stop_presence(&self) {
+    if let Some(store) = &self.redis_store {
+      store.stop();
+    }
+  }
+
+  pub(crate) fn with_redis(
+    id: ApplicationId,
+    token_issuer: TokenAccessIssuer,
+    token_verifier: TokenAccessVerifier,
+    store: Arc<crate::redis::RedisChannelStore>,
+  ) -> Self {
+    let router = Arc::new(ChannelRouter::new());
+    let delivery = Arc::new(crate::OutboxChannelCommitDelivery);
+    let mut application = Self::with_services(
+      id,
+      store.node_instance().clone(),
+      token_issuer,
+      token_verifier,
+      router,
+      AttachmentService::new(store.clone(), delivery.clone()),
+      PresenceService::new(store.clone(), delivery),
+    );
+    application.redis_store = Some(store);
+    application
   }
 
   pub fn attachments(&self) -> &AttachmentService {
@@ -94,7 +137,10 @@ impl RealtimeApplication {
 
   /// Removes one connection from channel and presence state
   /// and broadcasts the resulting presence leave messages.
-  pub async fn disconnect_connection(&self, connection: &Connection) -> Result<(), ConnectionCleanupError> {
+  pub async fn disconnect_connection(
+    &self,
+    connection: &Connection,
+  ) -> Result<(), ConnectionCleanupError> {
     // Сначала исключаем закрывающееся соединение из локальной доставки.
     self.router().disconnect(&connection.id).await;
 

@@ -1,6 +1,7 @@
 mod commit;
 mod error;
 mod outcome;
+mod projection;
 pub(crate) mod router;
 
 pub use commit::*;

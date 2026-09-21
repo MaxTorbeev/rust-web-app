@@ -1,5 +1,8 @@
 use crate::channel::delivery::{BroadcastError, BroadcastOutcome};
-use crate::{ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolMessage};
+use crate::{
+  ChannelMode, ConnectionId, OutboundSendError, OutboundSender, PreparedFrame, ProtocolAction,
+  ProtocolMessage,
+};
 use std::collections::{HashMap, HashSet};
 use tokio::sync::RwLock;
 
@@ -8,14 +11,21 @@ use tokio::sync::RwLock;
 /// itself.
 pub type ConnectionSender = OutboundSender;
 
+pub(super) struct LocalAttachment {
+  pub(super) sender: ConnectionSender,
+  pub(super) modes: Vec<ChannelMode>,
+  pub(super) revision: Option<u64>,
+  pub(super) pending_revision: u64,
+}
+
 #[derive(Default)]
 pub struct ChannelState {
-  channels: HashMap<String, HashMap<ConnectionId, ConnectionSender>>,
+  pub(super) channels: HashMap<String, HashMap<ConnectionId, LocalAttachment>>,
   connections: HashMap<ConnectionId, HashSet<String>>,
 }
 
 pub struct ChannelRouter {
-  state: RwLock<ChannelState>,
+  pub(super) state: RwLock<ChannelState>,
 }
 
 impl ChannelRouter {
@@ -28,14 +38,37 @@ impl ChannelRouter {
   /// Attaches a local WebSocket connection
   /// to a channel and keeps broadcast/disconnect indexes in sync.
   pub async fn attach(&self, channel: &str, connection_id: ConnectionId, sender: ConnectionSender) {
+    self
+      .register(
+        channel,
+        connection_id,
+        sender,
+        ChannelMode::ALL.to_vec(),
+        Some(0),
+      )
+      .await;
+  }
+
+  pub(super) async fn register(
+    &self,
+    channel: &str,
+    connection_id: ConnectionId,
+    sender: ConnectionSender,
+    modes: Vec<ChannelMode>,
+    revision: Option<u64>,
+  ) {
     let mut state = self.state.write().await;
     let channel = channel.to_string();
 
-    state
-      .channels
-      .entry(channel.clone())
-      .or_default()
-      .insert(connection_id.clone(), sender);
+    state.channels.entry(channel.clone()).or_default().insert(
+      connection_id.clone(),
+      LocalAttachment {
+        sender,
+        modes,
+        revision,
+        pending_revision: 0,
+      },
+    );
 
     state
       .connections
@@ -66,7 +99,17 @@ impl ChannelRouter {
         .map(|connections| {
           connections
             .iter()
-            .map(|(connection_id, sender)| (connection_id.clone(), sender.clone()))
+            .filter(|(_, attachment)| {
+              attachment.revision.is_some()
+                && match message.action {
+                  ProtocolAction::Presence => {
+                    attachment.modes.contains(&ChannelMode::PresenceSubscribe)
+                  }
+                  ProtocolAction::Message => attachment.modes.contains(&ChannelMode::Subscribe),
+                  _ => true,
+                }
+            })
+            .map(|(connection_id, attachment)| (connection_id.clone(), attachment.sender.clone()))
             .collect::<Vec<_>>()
         })
         .unwrap_or_default()

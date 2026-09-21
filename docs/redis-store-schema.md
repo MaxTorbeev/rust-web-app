@@ -1,12 +1,14 @@
 # Redis Presence: схема ключей v1
 
-Статус: определена схема и реализован построитель ключей. Store, сериализация
-значений и Lua transitions ещё не реализованы.
+Статус: реализованы store, сериализация, Lua transitions и runtime точного
+Presence. Ключи aggregated Occupancy зарезервированы для отдельного этапа.
 
 Связанные документы: [подзадача интеграции](redis-store-integration.md),
 [доменный дизайн](presence-occupancy.md).
 
-Контракты transitions: [attach_and_snapshot](redis-attach-and-snapshot.md).
+Контракты операций: [attach_and_snapshot](redis-attach-and-snapshot.md),
+[snapshot](redis-snapshot.md), [apply_presence](redis-apply-presence.md),
+[detach](redis-detach.md), [disconnect](redis-disconnect.md).
 
 ## Структура адаптера
 
@@ -59,25 +61,31 @@ Redis glob-символов и hash tags `{}`. Имена не подставл�
 |---|---|---|
 | `app.A.channel.C.state` | HASH | `presence_revision`, `occupancy_version` и шесть counters: `connections`, `publishers`, `subscribers`, `presence_connections`, `presence_subscribers`, `presence_members` |
 | `app.A.channel.C.attachments` | HASH | Field `K` → attachment с generation, effective modes и occupancy subscription |
-| `app.A.channel.C.members` | HASH | Field `K.U` → Presence member |
+| `app.A.channel.C.members` | HASH | `K.U` → подготовленный Rust JSON MemberPayload; `K.U:revision` и `K.U:updated_at` → числовые metadata |
 | `app.A.channel.C.shards` | HASH | Field `G` → абсолютные counters, shard version и deadline |
 | `app.A.connection.K.state` | HASH | `generation`, `status` (`open`/`closed`), `highest_serial` при наличии операций, `closed_at_ms` после закрытия |
 | `app.A.connection.K.channels` | SET | `C` для точных attachments |
 | `app.A.connection.K.members` | SET | `C.U` для members соединения |
-| `app.A.connection.K.operations` | HASH | Field `S` → fingerprint и полный сохранённый `PresenceMutationOutcome`, включая исходный event ID |
+| `app.A.connection.K.operations.S` | HASH | Одна операция: fingerprint, result и полные поля исходного события либо отказа; контракт в [apply_presence](redis-apply-presence.md) |
 | `app.A.connection.K.operation-order` | ZSET | Member `S`, score всегда `0`: лексикографический порядок для удаления минимальных serial при переполнении ledger |
 | `generations` | HASH | Field `G` → metadata запуска, включая `node_id`, `boot_generation`, `started_at` |
 | `generation-deadlines` | ZSET | Member `G`, score — deadline в миллисекундах Redis TIME |
-| `generation.G.connections` | SET | `A.K` для всех соединений с authoritative state/ledger, даже без текущих attachments |
+| `generation.G.connections` | SET | `A.K` для открытых соединений, включая ledger без текущих attachments; закрытые удаляются из SET и очищаются TTL |
 | `generation.G.shards` | SET | `A.C` для aggregated shards, включая нулевые shards с сохранённой version |
-| `outbox` | STREAM | Полный canonical event: event name, schema version, исходный event ID, canonical timestamp и payload |
+| `outbox` | STREAM | Полные неизменяемые данные canonical event: event name, schema version, исходный event ID, canonical timestamp и данные payload; внутренний формат версионируется отдельно |
 | `dirty-channels` | ZSET | Member `A.C`, score — ближайший Occupancy publish deadline |
 | `occupancy-publications` | HASH | Field `A.C` → claim версии Occupancy: version, deadline, token publisher-а и сохранённый snapshot |
 
 Versions, fence и msg_serial хранятся без потери целочисленной точности. `S`
-используется и в HASH, и в ZSET, поэтому serial не преобразуется в double score.
+используется в суффиксе HASH-ключа операции и в ZSET, поэтому serial не преобразуется в double score.
 `highest_serial` хранится в том же формате. Deadline scores — Unix milliseconds,
 назначаемые Redis; это не номера revisions или операций.
+
+Шесть счётчиков канала, `presence_revision` и `occupancy_version` имеют диапазон
+`0..9 007 199 254 740 991` (`2^53 - 1`), чтобы арифметика Lua оставалась точной.
+В Redis они хранятся каноническими десятичными строками, в Rust — как `u64`.
+Предел проверяется до записи; переполнение не сбрасывает значение. Это
+ограничение не меняет форматы и диапазоны fence, msg_serial и Redis Stream ID.
 
 Snapshot читает state и members атомарно. Любой transition поддерживает прямые
 и обратные indexes в той же операции. Переданные клиентом application/channel
@@ -112,7 +120,7 @@ Generation indexes и cleanup lock зависят от node ID + boot generation
 | Attachments и members | Без TTL. Удаление только authoritative detach/disconnect/reaper transition с counters, indexes и outbox; TTL не должен молча удалить участника без Leave |
 | Shards | Без TTL Redis-ключа. Deadline хранится в записи; очистка generation атомарно вычитает contribution. Нулевой shard сохраняет version до cleanup, иначе запоздалый flush мог бы восстановить старый вклад |
 | Open connection state и ledger | Без TTL, размер ledger ограничен `presence_ledger_capacity`. Запись соединения находится в generation index; reaper обеспечивает cleanup после смерти ноды |
-| Closed connection state, operations, operation-order | Первый disconnect/reaper задаёт общий `closed_at_ms` и абсолютный срок удаления `closed_at_ms + connection_state_ttl`. Повтор закрытия не продлевает срок. Retention не меньше поддерживаемого окна retry/resume |
+| Closed connection state, каждый operations.S, operation-order | Первый disconnect/reaper задаёт общий `closed_at_ms` и абсолютный срок удаления `closed_at_ms + connection_state_ttl`. Повтор закрытия не продлевает срок. Retention не меньше поддерживаемого окна retry/resume |
 | Connection channels/members | Удаляются при соответствующих transitions; после завершения disconnect пусты. Detach последнего канала не закрывает ledger живого соединения |
 | Generation metadata, deadlines и indexes | Без TTL. Reaper удаляет только после завершения всех batch, закрытия ledger, удаления members/attachments и вычитания shards этой generation |
 | Dirty channels и publication claims | Без TTL. Dirty marker удаляется только после outbox commit нужной версии и проверки, что более новая version не требует публикации. Claim старого publisher-а подлежит восстановлению после потери его lease |
@@ -122,7 +130,7 @@ Generation indexes и cleanup lock зависят от node ID + boot generation
 
 Отсутствие TTL у открытого ledger — намеренное решение v1: node renewal не
 проходит по всем connection keys, а dedup не исчезает раньше authoritative
-disconnect. После закрытия применяется retention. При смерти ноды записи
+disconnect. При закрытии A.K удаляется из generation index, затем применяется retention. При смерти ноды записи
 сначала обнаруживаются через generation index, затем закрываются reaper-ом.
 
 Цена сохранения монотонности — retained channel metadata и fence counters,
@@ -152,3 +160,8 @@ transitions и outbox.
 затем записи state/indexes/ledger/versions/outbox. Runtime error не откатывает
 уже выполненные записи: наличие namespace и Lua само по себе ещё не доказывает
 согласованность commit. Эти гарантии проверяются на этапе transitions.
+
+Формат members и отдельные HASH операций заменяют прежний экспериментальный
+JSON-формат. Чтение старых экспериментальных записей не поддерживается.
+Для проверки новой схемы нужен чистый изолированный namespace. Форматы outbox
+`attach.v2`/`presence.v2` версионируются отдельно от публичного события (schema 1).

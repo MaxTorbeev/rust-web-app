@@ -2,8 +2,10 @@
 
 ## Статус и границы совместимости
 
-Это целевой дизайн и план реализации. Redis-backed Presence, leases, outbox и
-Occupancy из этого документа пока не реализованы.
+Это целевой дизайн Presence и Occupancy. Точный Redis Presence, leases, outbox,
+projector и reaper реализованы; актуальные границы и команды проверки описаны
+в [плане интеграции](redis-store-integration.md). Aggregated Occupancy и доставка
+Occupancy пока не реализованы.
 
 Ably-compatible realtime-профиль для Pub/Sub и Presence из шести метрик:
 
@@ -16,14 +18,18 @@ Ably-compatible realtime-профиль для Pub/Sub и Presence из шест
 
 ## Текущее состояние
 
-Автономный (memory) режим реализован по целевой архитектуре и является
-единственным работающим режимом. `RealtimeApplication::new` собирает
+Автономный (memory) режим сохраняется по умолчанию. `RealtimeApplication::new` собирает
 `MemoryChannelStore` (одна реализация `AttachmentStore` и `PresenceStore`),
 `ChannelRouter` и `InProcessChannelCommitDelivery`; точка внешней сборки —
-`RealtimeApplication::with_services`. Выбора `PRESENCE_STORE_DRIVER` пока нет:
-`EVENT_BUS_DRIVER=nats` даёт кластерный event bus при process-local Presence,
-что является недопустимым профилем и должно отклоняться при старте, когда
-появится выбор драйвера.
+`RealtimeApplication::with_services`. `PRESENCE_STORE_DRIVER=redis` включает
+Redis runtime и требует `EVENT_BUS_DRIVER=nats`. Один лишь выбор NATS
+не переключает Presence на Redis: в memory-режиме Presence остаётся локальным.
+
+В текущем Presence projector cursor хранится для каждого attachment. Pending
+ATTACH хранит максимальную увиденную revision и при необходимости перечитывает
+snapshot; payload событий не буферизуется. Gap восстанавливается corrective
+SYNC под тем же lock, что доставка deltas. Описанная ниже общая state machine
+с двумя channel cursors и буферизацией Occupancy остаётся целевым дизайном.
 
 Работает в memory-режиме:
 

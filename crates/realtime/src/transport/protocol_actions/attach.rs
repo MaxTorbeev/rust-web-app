@@ -1,8 +1,7 @@
 use crate::transport::SocketContext;
 use crate::{
   AttachCommand, AttachmentTracking, ChannelKey, ChannelMode, OCCUPANCY_CAPABILITY_OPERATION,
-  OCCUPANCY_PARAM, OccupancySubscription, PresenceMessage, ProtocolFlag, ProtocolMessage,
-  resolve_effective_modes,
+  OCCUPANCY_PARAM, OccupancySubscription, ProtocolFlag, ProtocolMessage, resolve_effective_modes,
 };
 use std::collections::BTreeMap;
 use support::fresh_uuid;
@@ -62,7 +61,22 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
     attached_params.insert(OCCUPANCY_PARAM.to_owned(), subscription.to_wire_value());
   }
 
-  let attached_flags = ProtocolFlag::HAS_PRESENCE | ChannelMode::to_flags(&effective_modes);
+  let attached_flags = ChannelMode::to_flags(&effective_modes)
+    | if effective_modes.contains(&ChannelMode::PresenceSubscribe) {
+      ProtocolFlag::HAS_PRESENCE
+    } else {
+      ProtocolFlag::empty()
+    };
+
+  context
+    .router
+    .begin_attach(
+      channel,
+      connection.id.clone(),
+      context.sender.clone(),
+      effective_modes.clone(),
+    )
+    .await;
 
   let command = AttachCommand {
     channel: ChannelKey::new(connection.application_id().clone(), channel),
@@ -86,28 +100,40 @@ pub async fn attach(message: ProtocolMessage, context: &SocketContext<'_>) -> Ve
         "failed to attach connection to channel"
       );
 
+      context.sender.request_shutdown();
       return vec![ProtocolMessage::nack(message.msg_serial)];
     }
   };
 
-  // Затем регистрируем соединение в локальной доставке.
-  context
-    .router
-    .attach(channel, connection.id.clone(), context.sender.clone())
-    .await;
-
-  let presence = outcome
-    .snapshot
-    .members
-    .iter()
-    .map(PresenceMessage::from)
-    .collect();
-
-  // TODO(occupancy): отправлять initial `[meta]occupancy`, если подписка запрошена.
-  vec![
-    // Отправить оповещение о том что клиент добавлен
-    ProtocolMessage::attached(&message, attached_flags, attached_params),
-    // Отправить snapshot присутствующих клиентов
-    ProtocolMessage::sync(channel, presence),
-  ]
+  let attached = ProtocolMessage::attached(&message, attached_flags, attached_params);
+  let mut snapshot = outcome.snapshot;
+  loop {
+    match context
+      .router
+      .finish_attach(channel, &connection.id, &attached, &snapshot)
+      .await
+    {
+      Ok(true) => return Vec::new(), // ATTACHED/SYNC уже в очереди перед deltas.
+      Ok(false) => match context
+        .presence
+        .snapshot(ChannelKey::new(
+          connection.application_id().clone(),
+          channel,
+        ))
+        .await
+      {
+        Ok(current) => snapshot = current,
+        Err(error) => {
+          tracing::error!(%error, %channel, "failed to refresh attach snapshot");
+          context.sender.request_shutdown();
+          return vec![ProtocolMessage::nack(message.msg_serial)];
+        }
+      },
+      Err(error) => {
+        tracing::error!(%error, %channel, "failed to finish attach");
+        context.sender.request_shutdown();
+        return vec![ProtocolMessage::nack(message.msg_serial)];
+      }
+    }
+  }
 }

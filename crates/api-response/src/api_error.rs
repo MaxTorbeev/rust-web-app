@@ -9,6 +9,12 @@ pub struct ApiError {
 }
 
 impl ApiError {
+  pub fn unavailable(message: &str) -> Self {
+    Self {
+      status: StatusCode::SERVICE_UNAVAILABLE,
+      message: message.to_owned(),
+    }
+  }
   pub fn internal(message: &str) -> Self {
     Self {
       status: StatusCode::INTERNAL_SERVER_ERROR,

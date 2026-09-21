@@ -11,6 +11,9 @@ pub struct EventBusRuntime {
 }
 
 impl EventBusRuntime {
+  pub fn is_distributed(&self) -> bool {
+    self.worker.is_some()
+  }
   pub(super) fn local(event_bus: Arc<EventBus>) -> Self {
     Self {
       event_bus,

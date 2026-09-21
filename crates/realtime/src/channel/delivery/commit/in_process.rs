@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use crate::{
-  ChannelCommitDelivery, ChannelCommitDeliveryError, ChannelCommitDeliveryFuture, ChannelRouter,
-  CommittedChannelTransition, PresenceMessage, ProtocolMessage,
+  ChannelCommitDelivery, ChannelCommitDeliveryFuture, ChannelRouter, CommittedChannelTransition,
 };
 
 /// Доставка зафиксированных переходов в пределах одного процесса.
@@ -13,16 +12,16 @@ use crate::{
 /// bus и outbox. В кластере её место занимает outbox-вариант. Переход без
 /// изменений участников не создаёт кадров.
 ///
-/// Повтор одного события не распознаётся — по контракту трейта вызывающий
-/// передаёт каждый переход не более одного раза. Если событие всё же придёт
-/// дважды, подписчики получат одинаковый кадр с теми же `id` элементов.
+/// Общий projector сохраняет revision каждого подписчика, пропускает повторы
+/// и восстанавливает snapshot при пропуске ревизий.
 pub struct InProcessChannelCommitDelivery {
   router: Arc<ChannelRouter>,
+  store: Arc<dyn crate::PresenceStore>,
 }
 
 impl InProcessChannelCommitDelivery {
-  pub fn new(router: Arc<ChannelRouter>) -> Self {
-    Self { router }
+  pub fn new(router: Arc<ChannelRouter>, store: Arc<dyn crate::PresenceStore>) -> Self {
+    Self { router, store }
   }
 }
 
@@ -36,27 +35,10 @@ impl ChannelCommitDelivery for InProcessChannelCommitDelivery {
         return Ok(());
       };
 
-      let change = event.change();
-
-      // TODO(occupancy): проецировать `change.occupancy` подписчикам Occupancy.
-      if change.member_changes.is_empty() {
-        return Ok(());
-      }
-
-      let presence = change
-        .member_changes
-        .iter()
-        .map(PresenceMessage::from)
-        .collect();
-
       self
         .router
-        .broadcast(
-          &change.channel.channel,
-          ProtocolMessage::presence(&change.channel.channel, presence),
-        )
-        .await
-        .map_err(ChannelCommitDeliveryError::LocalDelivery)?;
+        .project_presence(event.change(), self.store.as_ref())
+        .await?;
 
       Ok(())
     })

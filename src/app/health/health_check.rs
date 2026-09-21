@@ -13,6 +13,7 @@ pub(crate) struct HealthCheck {
   node: NodeIdentity,
   redis: RedisHealthCheck,
   event_bus: EventBusHealthCheck,
+  realtime: std::sync::Arc<realtime::Realtime>,
 }
 
 impl HealthCheck {
@@ -21,12 +22,14 @@ impl HealthCheck {
     node: NodeIdentity,
     redis: RedisHealthCheck,
     event_bus: EventBusHealthCheck,
+    realtime: std::sync::Arc<realtime::Realtime>,
   ) -> Self {
     Self {
       version,
       node,
       redis,
       event_bus,
+      realtime,
     }
   }
 
@@ -40,9 +43,13 @@ impl HealthCheck {
 
   /// Текущее traffic state приложения.
   ///
-  /// Draining пока не реализован, поэтому приложение всегда принимает трафик.
-  pub(crate) const fn traffic(&self) -> TrafficState {
-    TrafficState::Accepting
+  /// Redis Presence снимает готовность при остановке обязательных workers.
+  pub(crate) fn traffic(&self) -> TrafficState {
+    if self.realtime.is_ready() {
+      TrafficState::Accepting
+    } else {
+      TrafficState::Draining
+    }
   }
 }
 

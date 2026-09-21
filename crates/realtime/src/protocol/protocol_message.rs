@@ -18,6 +18,10 @@ pub struct ProtocolMessage {
   #[serde(skip_serializing_if = "Option::is_none")]
   pub channel: Option<String>,
 
+  /// Непрозрачная граница snapshot; full resume по этому serial пока не поддерживается.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub channel_serial: Option<String>,
+
   #[serde(skip_serializing_if = "Option::is_none")]
   pub messages: Option<Vec<Message>>,
 
@@ -52,6 +56,7 @@ impl ProtocolMessage {
     Self {
       action,
       channel: None,
+      channel_serial: None,
       messages: None,
       presence: None,
       msg_serial: None,
